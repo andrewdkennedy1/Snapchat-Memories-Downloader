@@ -1,7 +1,11 @@
-# Snapchat Memories Downloader
+# Free Snapchat Memories Downloader
 
-Download all your Snapchat memories from a data export, preserving metadata
-(date, location) and organizing files sequentially.
+**⚠️ Save your memories before Snapchat starts charging for storage!**
+
+Download ALL your Snapchat memories completely FREE - don't pay $15 to
+ExportSnaps or other services. This tool runs entirely on your computer,
+preserving all metadata (dates, GPS locations) while keeping your data 100%
+private.
 
 **Two ways to use:**
 
@@ -34,14 +38,29 @@ but are now separate options at the bottom of the list.
 
 [More info on Reddit](https://www.reddit.com/r/techsupport/comments/18mkfvv/is_there_a_way_of_exporting_all_snapchat/)
 
-## Features
+## Why Use This FREE Tool?
+
+### 💰 Don't Pay for What Should Be Free
+
+- **100% FREE** - ExportSnaps charges $15. This costs nothing.
+- **Save Before Fees** - Download now before Snapchat implements storage charges
+- **Open Source** - Inspect the code yourself on GitHub
+
+### 🔒 Privacy & Security
+
+- **No Upload Required** - Your data never leaves your computer
+- **Runs Locally** - Everything processes in your browser or on your machine
+- **No Account Needed** - No signup, no email, no tracking
+- **Safer Than Paid Services** - Don't trust your memories to third-party servers
+
+### ✨ Features
 
 - Downloads all memories from `memories_history.html`
 - Sequential naming: `01.jpg`, `02.mp4`, `03.jpg`, etc.
-- Preserves metadata: date, GPS coordinates, media type
+- **Preserves ALL metadata**: dates, GPS coordinates, media type
 - **Sets file timestamps to match original capture date** (Python only)
 - Handles ZIP files with overlays (extracts to `-main` and `-overlay` files)
-- Saves all metadata to `metadata.json`
+- Saves complete `metadata.json` with all information
 - **Resume/Retry support** - Pick up where you left off or retry failed downloads
 - Incremental metadata updates - Track download progress in real-time
 
@@ -281,7 +300,7 @@ Simply review and merge them to keep dependencies current.
 
 ---
 
-## 🔒 Privacy & Security
+## 🔐 How Your Data Stays Private
 
 - **Web Version**: All processing happens in your browser. No data is sent to
   any server.

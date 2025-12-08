@@ -1,0 +1,30 @@
+GitHub Repository Topics/Tags to Add
+=====================================
+
+Go to your repository settings and add these topics:
+
+snapchat
+snapchat-memories
+snapchat-downloader
+snapchat-backup
+snapchat-export
+free-alternative
+exportsnaps-alternative
+memory-backup
+photo-backup
+video-backup
+metadata-preservation
+gps-metadata
+client-side
+browser-based
+privacy-focused
+no-upload
+offline-processing
+open-source
+python
+javascript
+data-liberation
+snapchat-data
+snapchat-storage
+backup-tool
+download-tool
