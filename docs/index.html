@@ -556,15 +556,15 @@
                 }
 
                 const { FFmpeg } = FFmpegWASM;
-                const { toBlobURL } = FFmpegUtil;
 
                 ffmpegInstance = new FFmpeg();
 
-                // Load FFmpeg core
+                // Load FFmpeg core directly from CDN
+                // Note: Using direct URLs instead of toBlobURL to avoid CORS issues on GitHub Pages
                 const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
                 await ffmpegInstance.load({
-                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    coreURL: `${baseURL}/ffmpeg-core.js`,
+                    wasmURL: `${baseURL}/ffmpeg-core.wasm`,
                 });
 
                 ffmpegLoaded = true;
