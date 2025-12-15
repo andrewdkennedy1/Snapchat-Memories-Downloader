@@ -673,13 +673,15 @@ def merge_existing_files(folder_path: str) -> None:
         extension = main_file.suffix
 
         # Look for corresponding overlay file
-        overlay_file = folder / filename.replace('-main', '-overlay')
+        overlay_file = list(folder.glob(f"{base_name.replace(extension, '')}-overlay.*"))
 
-        if not overlay_file.exists():
+        if not overlay_file:
             print(f"\n[SKIP] {filename}")
             print("  No matching overlay file found")
             skipped_count += 1
             continue
+
+        overlay_file = overlay_file[0]
 
         # Determine output filename (without -main suffix)
         output_file = folder / base_name
