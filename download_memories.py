@@ -366,16 +366,18 @@ def download_and_extract(
             main_file = None
             overlay_file = None
 
-            # Extract files
+            # Extract files and preserve original filenames/extensions
             extracted_files = {}
             for zip_info in filenames:
                 file_data = zf.read(zip_info)
+                # Get the original file extension from the ZIP filename
+                original_ext = Path(zip_info).suffix
                 if '-overlay' in zip_info.lower():
                     overlay_file = file_data
-                    extracted_files['overlay'] = file_data
+                    extracted_files['overlay'] = {'data': file_data, 'ext': original_ext}
                 else:
                     main_file = file_data
-                    extracted_files['main'] = file_data
+                    extracted_files['main'] = {'data': file_data, 'ext': original_ext}
 
             # Check media type
             is_image = extension.lower() in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif']
@@ -471,14 +473,17 @@ def download_and_extract(
 
             # If not merging or merge failed, save separately
             if not merge_attempted:
-                for file_type, file_data in extracted_files.items():
+                for file_type, file_info in extracted_files.items():
+                    file_data = file_info['data']
+                    file_ext = file_info['ext']
+
                     if file_type == 'overlay':
-                        output_filename = f"{file_num}-overlay{extension}"
+                        output_filename = f"{file_num}-overlay{file_ext}"
                     else:
-                        output_filename = f"{file_num}-main{extension}"
+                        output_filename = f"{file_num}-main{file_ext}"
 
                     # Add EXIF metadata to images
-                    is_image = extension.lower() in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif']
+                    is_image = file_ext.lower() in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif']
                     if is_image:
                         file_data = add_exif_metadata(file_data, date_str, latitude, longitude)
 
