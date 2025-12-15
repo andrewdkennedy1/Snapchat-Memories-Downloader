@@ -765,6 +765,25 @@
         </p>
 
         <h3 style="margin-top: 20px; color: #667eea">
+          Videos are still coming out black with audio - what should I do?
+        </h3>
+        <p>
+          <strong>⚠️ Known Issue:</strong> FFmpeg.wasm (the browser video processor) has compatibility issues across all browsers that can cause black screens.
+        </p>
+        <p style="margin-top: 10px;">
+          <strong>Recommended Solution:</strong> Use the <strong>Python script</strong> instead:
+        </p>
+        <ol style="margin-left: 20px; margin-top: 5px;">
+          <li>Download the repository: <code>git clone https://github.com/andrefecto/Snapchat-Memories-Downloader.git</code></li>
+          <li>Install FFmpeg on your computer (<a href="https://ffmpeg.org/download.html" target="_blank" style="color: #667eea;">ffmpeg.org</a>)</li>
+          <li>Run: <code>python download_memories.py</code></li>
+          <li>Follow the prompts to log in and download</li>
+        </ol>
+        <p style="margin-top: 10px;">
+          The Python script uses native FFmpeg which is <strong>much more reliable</strong> than the browser WASM version. It works on Windows, Mac, and Linux.
+        </p>
+
+        <h3 style="margin-top: 20px; color: #667eea">
           How does individual video processing work?
         </h3>
         <p>
@@ -914,9 +933,20 @@
       const { FFmpeg } = FFmpegWASM;
       ffmpegInstance = new FFmpeg();
 
+      // Detect browser
+      const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+      const isChrome = navigator.userAgent.toLowerCase().indexOf('chrome') > -1;
+
+      if (isFirefox) {
+        addLog('  ⚠️ Firefox detected: Video merging may be unstable due to WASM limitations', 'warning');
+        addLog('  Recommendation: Use Chrome or Edge for best results', 'warning');
+        addLog('Firefox browser detected - known WASM/FFmpeg compatibility issues', 'warning', 'ffmpeg');
+      }
+
       addLog('  Loading FFmpeg.wasm (this may take a few seconds)...', 'info');
       addLog('  💡 Check the "FFmpeg Details" tab for detailed conversion logs', 'info');
       addLog('Loading FFmpeg.wasm...', 'info', 'ffmpeg');
+
       await ffmpegInstance.load({
         coreURL: new URL('./ffmpeg/ffmpeg-core.js', window.location).href,
         wasmURL: new URL('./ffmpeg/ffmpeg-core.wasm', window.location).href,
@@ -1324,15 +1354,26 @@
           ];
         } else {
           // overlay is a video
-          // Use explicit dimensions if available (more compatible than scale2ref in WASM)
+          // Detect Firefox and use simpler filter chain
+          const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
           let filterComplex;
+          let preset = "medium";
+
+          // Use SIMPLEST possible filter for ALL browsers
+          // Complex filters (fps, setsar, loop, setpts) cause black screen in WASM FFmpeg
+          addLog('  Using simplified filter chain for WASM compatibility', 'info', 'ffmpeg');
+
           if (mainWidth && mainHeight) {
-            addLog(`  Using explicit dimensions for overlay scaling: ${mainWidth}x${mainHeight}`, 'info', 'ffmpeg');
-            filterComplex = `[0:v]fps=30,setsar=1[base];[1:v]scale=${mainWidth}:${mainHeight},fps=30,setsar=1,loop=loop=-1:size=32767:start=0,setpts=N/FRAME_RATE/TB[ovr];[base][ovr]overlay=format=auto:shortest=1[outv]`;
+            // We have dimensions - use them
+            filterComplex = `[1:v]scale=${mainWidth}:${mainHeight}[ovr];[0:v][ovr]overlay=shortest=1`;
+            addLog(`  Scaling overlay to ${mainWidth}x${mainHeight}`, 'info', 'ffmpeg');
           } else {
-            addLog('  Using scale2ref for overlay scaling (dimensions not available)', 'warning', 'ffmpeg');
-            filterComplex = "[0:v]fps=30,setsar=1[base];[1:v]fps=30,setsar=1,loop=loop=-1:size=32767:start=0,setpts=N/FRAME_RATE/TB[ovr_tmp];[ovr_tmp][base]scale2ref[ovr][base];[base][ovr]overlay=format=auto:shortest=1[outv]";
+            // No dimensions - overlay keeps its size
+            filterComplex = `[0:v][1:v]overlay=shortest=1`;
+            addLog('  Using overlay at original size (no scaling)', 'warning', 'ffmpeg');
           }
+
+          preset = isFirefox ? "veryfast" : "medium";
 
           args = [
             "-i",
@@ -1342,13 +1383,11 @@
             "-filter_complex",
             filterComplex,
             "-map",
-            "[outv]",
-            "-map",
-            "0:a?",
+            "0:a?", // Map audio from main video
             "-c:v",
             "libx264",
             "-preset",
-            "medium", // Changed from ultrafast - more stable encoding
+            preset,
             "-crf",
             "23",
             "-pix_fmt",
@@ -1357,6 +1396,7 @@
             "copy",
             "-movflags",
             "+faststart",
+            "-shortest", // Stop at shortest input
             "-y",
             "output.mp4",
           ];
