@@ -34,9 +34,20 @@ jobs:
         run: |
           mkdir -p docs/ffmpeg
 
+          # Copy ffmpeg.js files
           cp node_modules/@ffmpeg/ffmpeg/dist/umd/ffmpeg.js \
              docs/ffmpeg/ffmpeg.js
 
+          cp node_modules/@ffmpeg/ffmpeg/dist/umd/ffmpeg.js.map \
+             docs/ffmpeg/ffmpeg.js.map
+
+          cp node_modules/@ffmpeg/ffmpeg/dist/umd/814.ffmpeg.js \
+             docs/ffmpeg/814.ffmpeg.js
+
+          cp node_modules/@ffmpeg/ffmpeg/dist/umd/814.ffmpeg.js.map \
+             docs/ffmpeg/814.ffmpeg.js.map
+
+          # Copy ffmpeg-core files
           cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js \
              docs/ffmpeg/ffmpeg-core.js
 
