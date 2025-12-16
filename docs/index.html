@@ -2180,7 +2180,8 @@
             // Create a new ZIP for this merged video
             const videoZip = new JSZip();
             const fileDate = parseSnapchatDate(metadata.date);
-            videoZip.file(filename, mergedData, { date: fileDate });
+            // Store videos uncompressed to prevent browser playback issues
+            videoZip.file(filename, mergedData, { date: fileDate, compression: "STORE" });
 
             // Update metadata with merged file
             metadata.files = [{
@@ -2529,8 +2530,9 @@
                     const filename = `${fileNum}${extension}`;
 
                     // Add to ZIP with original date
+                    // Store videos uncompressed to prevent browser playback issues
                     const fileDate = parseSnapchatDate(metadata.date);
-                    zip.file(filename, mergedData, { date: fileDate });
+                    zip.file(filename, mergedData, { date: fileDate, compression: "STORE" });
                     metadata.files.push({
                       path: filename,
                       size: mergedData.byteLength,
@@ -2604,7 +2606,8 @@
                       ? `${fileNum}-overlay${origExt}`
                       : `${fileNum}-main${origExt}`;
 
-                    zip.file(newFilename, fileData, { date: fileDate });
+                    // Store videos uncompressed (this is video merge fallback path)
+                    zip.file(newFilename, fileData, { date: fileDate, compression: "STORE" });
                     metadata.files.push({
                       path: newFilename,
                       size: fileData.byteLength,
@@ -2651,7 +2654,13 @@
                       );
                     }
 
-                    zip.file(newFilename, fileData, { date: fileDate });
+                    // Store videos uncompressed to prevent browser playback issues
+                    const zipOptions = { date: fileDate };
+                    if (metadata.media_type === "Video") {
+                      zipOptions.compression = "STORE";
+                    }
+
+                    zip.file(newFilename, fileData, zipOptions);
                     metadata.files.push({
                       path: newFilename,
                       size: fileData.byteLength,
@@ -2686,7 +2695,14 @@
               );
             }
 
-            zip.file(filename, fileData, { date: fileDate });
+            // Store videos uncompressed to prevent browser playback issues
+            // DEFLATE compression on already-compressed video can break browser decoders
+            const zipOptions = { date: fileDate };
+            if (metadata.media_type === "Video") {
+              zipOptions.compression = "STORE";
+            }
+
+            zip.file(filename, fileData, zipOptions);
             metadata.files.push({
               path: filename,
               size: arrayBuffer.byteLength,
