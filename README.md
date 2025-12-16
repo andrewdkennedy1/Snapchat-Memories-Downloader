@@ -106,7 +106,20 @@ If your download gets interrupted or has failures:
 
 ## 🐍 Python Script
 
-## Setup
+### Quick Start
+
+```bash
+# 1. Setup (one-time)
+./setup.sh
+source venv/bin/activate
+
+# 2. Download your memories
+python download_memories.py
+
+# 3. Done! Files saved to ./memories/
+```
+
+### Setup
 
 1. Run the setup script:
 
@@ -114,259 +127,156 @@ If your download gets interrupted or has failures:
    ./setup.sh
    ```
 
-This will:
+   This creates a virtual environment and installs dependencies.
 
-- Create a Python virtual environment
-- Install required dependencies (requests)
+2. **(Optional)** Install FFmpeg for video overlay merging:
 
-### Optional: FFmpeg for Video Overlay Merging
+   | Platform              | Command                                                      |
+   |-----------------------|--------------------------------------------------------------|
+   | macOS                 | `brew install ffmpeg`                                        |
+   | Ubuntu/Debian         | `sudo apt-get install ffmpeg`                                |
+   | Windows (Chocolatey)  | `choco install ffmpeg`                                       |
+   | Windows (manual)      | Download from [ffmpeg.org](https://ffmpeg.org/download.html) |
 
-To enable video overlay merging, install FFmpeg:
+   **Note:** FFmpeg is only needed for merging video overlays.
+   Without it, videos are saved as separate `-main` and `-overlay` files.
 
-**macOS:**
-```bash
-brew install ffmpeg
-```
+### Basic Usage
 
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install ffmpeg
-```
-
-**Windows (via Chocolatey):**
-```bash
-choco install ffmpeg
-```
-
-**Windows (manual):**
-- Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
-
-**Note:** FFmpeg is only required if you want to merge video overlays. The tool works without it (videos will be saved as separate `-main` and `-overlay` files).
-
-## Usage
-
-### Activate Virtual Environment
+**Activate environment** (do this each time you open a new terminal):
 
 ```bash
 source venv/bin/activate
 ```
 
-### Test Mode (Download first 3 files)
+**Test mode** (download first 3 files only):
 
 ```bash
 python download_memories.py --test
 ```
 
-### Full Download
+**Full download**:
 
 ```bash
 python download_memories.py
 ```
 
-### Custom HTML File Path
+**Custom HTML file path**:
 
-By default, the script looks for `html/memories_history.html`. You can specify a different path:
-
-**Specify the HTML file directly:**
 ```bash
-python download_memories.py /path/to/your/memories_history.html
-```
+# Direct file path
+python download_memories.py /path/to/memories_history.html
 
-**Or specify the folder containing the HTML file:**
-```bash
+# Or folder containing the HTML
 python download_memories.py /path/to/html/folder
 ```
 
-**Combine with other flags:**
-```bash
-python download_memories.py ~/Downloads/snapchat-data/html --merge-overlays
-```
-
-### Resume Interrupted Download
-
-If your download gets interrupted, resume from where you left off:
+**Resume/Retry**:
 
 ```bash
+# Resume interrupted download
 python download_memories.py --resume
-```
 
-### Retry Failed Downloads
-
-To retry only the failed downloads:
-
-```bash
+# Retry only failed downloads
 python download_memories.py --retry-failed
 ```
 
-### Merge Overlays
+### Advanced Features
 
-To merge overlay files on top of main files (images and videos):
+#### Merge Overlays
+
+Combine overlay files with main content:
 
 ```bash
 python download_memories.py --merge-overlays
 ```
 
-This will composite the `-overlay` content on top of the `-main` content and save only the merged result.
+- **Images:** Fast, instant processing
+- **Videos:** Requires FFmpeg, 1-5 minutes per video
 
-**Requirements:**
-- Images: No additional requirements (uses Pillow)
-- Videos: Requires FFmpeg (see installation instructions above)
-
-**Performance:**
-- Images: Fast, instant processing
-- Videos: May take 1-5 minutes per video depending on length and resolution
-
-If FFmpeg is not installed, videos will be saved as separate `-main` and `-overlay` files.
-
-### Re-process Videos Only
-
-If you already downloaded your memories before video merging was available, you can re-process only the videos:
+**Re-process specific media type:**
 
 ```bash
+# Videos only
 python download_memories.py --videos-only --merge-overlays
-```
 
-This will:
-- Skip all pictures (already downloaded)
-- Re-download and process only videos
-- Merge video overlays if `--merge-overlays` is specified
-
-### Re-process Pictures Only
-
-Similarly, to re-process only pictures:
-
-```bash
+# Pictures only
 python download_memories.py --pictures-only --merge-overlays
 ```
 
-This will:
-- Skip all videos (already downloaded)
-- Re-download and process only pictures
-- Merge picture overlays if `--merge-overlays` is specified
-
-### Merge Already-Downloaded Files
-
-If you already have `-main` and `-overlay` files downloaded and want to merge them without re-downloading:
+**Merge already-downloaded files:**
 
 ```bash
 python download_memories.py --merge-existing ./memories
 ```
 
-This will:
-- Scan the specified folder for `-main` and `-overlay` file pairs
-- Merge them using FFmpeg (videos) or Pillow (images)
-- Create merged files WITHOUT deleting the original `-main`/`-overlay` files
-- Support all image formats: JPG, PNG, WebP, GIF, BMP, TIFF
+Creates merged versions without deleting originals.
 
-**Use case**: You previously downloaded your memories without `--merge-overlays`, and now you want to create merged versions while keeping the original separate files.
-
-**Note**: To get `-main` and `-overlay` files in the first place, download without the `--merge-overlays` flag.
-
-### Custom Output Directory
-
-By default, files are saved to the `memories/` directory. You can specify a custom output directory:
-
-```bash
-python download_memories.py --output ~/Desktop/snapchat-memories
-```
-
-Or use the short form:
+#### Custom Output Directory
 
 ```bash
 python download_memories.py -o /path/to/output
 ```
 
-The output directory will be created automatically if it doesn't exist.
+Saves files to a custom location instead of `./memories/`
 
-**Combine with other flags:**
-```bash
-python download_memories.py -o ~/Desktop/snaps --timestamp-filenames --remove-duplicates
-```
-
-### Timestamp-Based Filenames
-
-Name files based on when they were taken instead of sequential numbers:
+#### Timestamp-Based Filenames
 
 ```bash
 python download_memories.py --timestamp-filenames
 ```
 
-This will name files as:
-- `2024.11.30-14:30:45.jpg`
-- `2024.12.15-09:22:13.mp4`
-- `2023.06.20-18:45:00.jpg`
+Names files as `2024.11.30-14:30:45.jpg` instead of `01.jpg`
 
-**Benefits:**
-- Files sort by date in file managers and photo apps
-- Easy to identify when memories were taken at a glance
-- Works with overlay files: `2024.11.30-14:30:45-main.mp4` and `2024.11.30-14:30:45-overlay.mp4`
+- ✅ Files sort by date in file managers
+- ✅ Easy to identify when memories were taken
 
-### Remove Duplicate Files
-
-Automatically detect and skip duplicate files during download:
+#### Remove Duplicate Files
 
 ```bash
 python download_memories.py --remove-duplicates
 ```
 
-This will:
-- Check each file before saving by calculating its MD5 hash
-- Compare against all existing files in the output directory
-- Skip saving if the file already exists (saves bandwidth and disk space)
-- Continue downloading only new, unique files
+Checks MD5 hash before saving each file and skips duplicates.
 
-**Benefits:**
-- Works during download, not after - saves time and bandwidth
-- Perfect for resuming downloads or re-running the script
-- Prevents duplicate storage even if Snapchat exports the same memory multiple times
+- ✅ Saves bandwidth - doesn't re-download existing files
+- ✅ Perfect for resuming or re-running the script
+- ✅ Handles cases where Snapchat exports the same memory multiple times
 
-**Use case:** Snapchat sometimes exports the same memory multiple times, especially if it appears in multiple albums or stories. This flag ensures you only save each unique file once, even across multiple download runs.
-
-### Join Multi-Snap Videos
-
-Automatically detect and join videos that were part of multi-snap stories:
+#### Join Multi-Snap Videos
 
 ```bash
 python download_memories.py --join-multi-snaps
 ```
 
-This will:
-- Group videos taken within 10 seconds of each other
-- Concatenate them into a single video using FFmpeg
-- Name the result with `-joined` suffix (e.g., `2024.11.30-14:30:45-joined.mp4`)
-- Delete the original individual videos after successful joining
-- Preserve the timestamp of the first video in the sequence
+Detects videos taken within 10 seconds and concatenates them.
 
-**Requirements:** FFmpeg must be installed (see installation instructions above)
+- ✅ Stitches long stories back together
+- ✅ Requires FFmpeg
+- ✅ Deletes originals after successful join
 
-**Use case:** When you recorded a long story as multiple 10-second snaps, this automatically stitches them back together.
-
-### Combine Multiple Features
-
-You can use multiple flags together:
+### Combining Features
 
 ```bash
-# Timestamp filenames, remove duplicates, and join multi-snaps
-python download_memories.py --timestamp-filenames --remove-duplicates --join-multi-snaps
+# All the features!
+python download_memories.py \
+  -o ~/Desktop/memories \
+  --timestamp-filenames \
+  --remove-duplicates \
+  --merge-overlays \
+  --join-multi-snaps
 
-# Custom output directory with all features
-python download_memories.py -o ~/Desktop/memories --timestamp-filenames --merge-overlays --join-multi-snaps
-
-# Resume download with new features
+# Resume with duplicate detection
 python download_memories.py --resume --remove-duplicates
 ```
 
-### View All Options
-
-To see all available options:
+### Getting Help
 
 ```bash
+# View all options
 python download_memories.py --help
-```
 
-### Deactivate Virtual Environment
-
-```bash
+# When done, deactivate virtual environment
 deactivate
 ```
 
@@ -530,30 +440,41 @@ If this tool helped you recover your memories, consider [buying me a coffee](htt
 
 If your videos are downloading but show as blank or black when you try to play them:
 
-**Cause:** The download URLs from Snapchat may have expired, or the server is returning error pages instead of video files.
+**Cause:** The download URLs from Snapchat may have expired,
+or the server is returning error pages instead of video files.
 
 **How to tell:**
-- The tool will now show warnings like: `WARNING: File may not be a valid video (invalid MP4 signature)`
+
+- The tool will show warnings like:
+  `WARNING: File may not be a valid video (invalid MP4 signature)`
 - Very small file sizes (under 100 bytes) indicate invalid files
 - The log will show the first bytes of the file to help diagnose the issue
 
 **Solutions:**
-1. **Request a fresh data export from Snapchat** - URLs expire after some time
-2. **Download sooner** - Process your Snapchat export as soon as you receive it
-3. **Check the warnings** - The tool will now alert you to potentially invalid files during download
 
-**Note:** The tool validates video files and warns you about potential issues, but it cannot fix expired or invalid URLs from Snapchat's servers.
+1. **Request a fresh data export from Snapchat**
+   - URLs expire after some time
+2. **Download sooner**
+   - Process your Snapchat export as soon as you receive it
+3. **Check the warnings**
+   - The tool will alert you to potentially invalid files during download
+
+**Note:** The tool validates video files and warns you about potential issues,
+but it cannot fix expired or invalid URLs from Snapchat's servers.
 
 ### FFmpeg Not Found (Python)
 
 If you see: `Warning: ffmpeg not found. Video overlay merging will be disabled.`
 
 **Solution:** Install FFmpeg:
+
 - **macOS**: `brew install ffmpeg`
 - **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
-- **Windows**: `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
+- **Windows**: `choco install ffmpeg` or download from
+  [ffmpeg.org](https://ffmpeg.org/download.html)
 
-The tool will still work without FFmpeg - videos will be saved as separate `-main` and `-overlay` files.
+The tool will still work without FFmpeg - videos will be saved as separate
+`-main` and `-overlay` files.
 
 ### Web Version: FFmpeg.wasm CORS Error
 
