@@ -1342,6 +1342,13 @@ if __name__ == '__main__':
         help='Path to memories_history.html file or folder containing it (default: html/memories_history.html)'
     )
     parser.add_argument(
+        '-o', '--output',
+        type=str,
+        default='memories',
+        metavar='DIR',
+        help='Output directory for downloaded files (default: memories)'
+    )
+    parser.add_argument(
         '--resume',
         action='store_true',
         help='Resume interrupted download'
@@ -1426,6 +1433,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Extract flags
+    output_dir = args.output
     resume_mode = args.resume
     retry_failed_mode = args.retry_failed
     test_mode = args.test
@@ -1445,7 +1453,7 @@ if __name__ == '__main__':
         memories = parse_html_file(HTML_FILE)
         memories = memories[:3]  # Limit to first 3
 
-        output_path = Path('memories')
+        output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
         metadata_list = []
 
@@ -1513,6 +1521,7 @@ if __name__ == '__main__':
     else:
         download_all_memories(
             HTML_FILE,
+            output_dir=output_dir,
             resume=resume_mode,
             retry_failed=retry_failed_mode,
             merge_overlays=merge_overlays_mode,
