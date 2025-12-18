@@ -80,12 +80,6 @@ def build_config_section(gui) -> ft.Control:
         expand=True,
     )
 
-    gui.merge_cb = ft.Checkbox(
-        label="Merge overlays (when possible)",
-        value=True,
-        on_change=lambda _: gui._sync_option_states(),
-    )
-    gui.defer_cb = ft.Checkbox(label="Defer video merges (batch at end)", value=False)
     gui.concurrent_cb = ft.Checkbox(
         label="Concurrent download",
         value=True,
@@ -95,19 +89,38 @@ def build_config_section(gui) -> ft.Control:
     gui.timestamp_cb = ft.Checkbox(label="Timestamp-based filenames", value=True)
     gui.join_multi_cb = ft.Checkbox(label="Join multi-snaps (videos)", value=True)
 
-    gui.jobs_count = ft.TextField(
-        label="Jobs",
-        value="5",
-        width=120,
-        border_color=SC_YELLOW,
-        hint_text="e.g. 5",
+    gui.jobs_value_text = ft.Text("5", size=12, color=SC_YELLOW)
+    gui.jobs_slider = ft.Slider(
+        min=1,
+        max=20,
+        divisions=19,
+        value=5,
+        on_change=lambda _: gui._sync_option_states(),
+    )
+    gui.jobs_warning = ft.Text(
+        "Warning: higher values increase CPU usage.",
+        size=11,
+        color=SC_YELLOW,
+    )
+    gui.merge_mode_text = ft.Text(
+        "Overlay merging runs after downloads complete (2-step process).",
+        size=12,
+        color=SC_YELLOW,
     )
 
     options = ft.Row(
         [
-            ft.Column([gui.merge_cb, gui.defer_cb, gui.concurrent_cb], expand=True, spacing=6),
+            ft.Column([gui.merge_mode_text, gui.concurrent_cb], expand=True, spacing=6),
             ft.Column([gui.duplicates_cb, gui.timestamp_cb, gui.join_multi_cb], expand=True, spacing=6),
-            ft.Column([gui.jobs_count], width=140),
+            ft.Column(
+                [
+                    ft.Row([ft.Text("Jobs", size=12), gui.jobs_value_text], spacing=6),
+                    gui.jobs_slider,
+                    gui.jobs_warning,
+                ],
+                width=220,
+                spacing=6,
+            ),
         ],
         spacing=16,
         vertical_alignment=ft.CrossAxisAlignment.START,

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import queue
 import threading
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .deps import requests
 from .downloader import download_and_extract
 from .duplicates import DuplicateIndex
+from .exif_utils import add_exif_metadata
 from .files import (
     generate_filename,
     get_file_extension,
@@ -17,7 +18,7 @@ from .files import (
 )
 from .metadata_store import initialize_metadata, metadata_lock, save_metadata
 from .multisnap import join_multi_snaps
-from .overlay import merge_video_overlay
+from .overlay import merge_image_overlay, merge_video_overlay
 from .parser import parse_html_file
 from .report import generate_report, save_report, print_report_summary, show_report_popup
 
@@ -65,7 +66,7 @@ def download_item(
     use_timestamp_filenames: bool,
     remove_duplicates: bool,
     duplicate_index: DuplicateIndex | None,
-    deferred_videos: list,
+    deferred_overlays: list,
     deferred_lock: threading.Lock,
     stats: dict,
     stats_lock: threading.Lock,
@@ -149,7 +150,7 @@ def download_item(
 
             if any(f.get("deferred") for f in files_saved):
                 with deferred_lock:
-                    deferred_videos.append((file_num, metadata, files_saved))
+                    deferred_overlays.append((file_num, metadata, files_saved))
 
             # Update total bytes
             total_bytes = sum(f.get("size", 0) for f in files_saved)
@@ -181,6 +182,7 @@ def download_all_memories(
     join_multi_snaps_enabled: bool = False,
     concurrent: bool = False,
     jobs: int = 5,
+    jobs_supplier: callable | None = None,
     limit: int | None = None,
     stop_event: threading.Event | None = None,
     progress_callback: callable = None,
@@ -238,7 +240,7 @@ def download_all_memories(
     print("=" * 60)
 
     total_items = len(items_to_download)
-    deferred_videos: list[tuple[str, dict, list]] = []
+    deferred_overlays: list[tuple[str, dict, list]] = []
     deferred_lock = threading.Lock()
 
     stats = {"total_bytes": 0, "start_time": time.time()}
@@ -275,16 +277,66 @@ def download_all_memories(
     print_progress(0)
 
     if concurrent and total_items > 1:
-        print(f"Downloading concurrently using {jobs} jobs...")
-        executor = ThreadPoolExecutor(max_workers=jobs)
-        futures = []
-        try:
-            for idx, metadata in items_to_download:
+        job_limit_default = max(1, min(int(jobs), 20))
+
+        def read_job_limit() -> int:
+            value = job_limit_default
+            if jobs_supplier:
+                try:
+                    value = int(jobs_supplier())
+                except (TypeError, ValueError):
+                    value = job_limit_default
+            if value < 1:
+                value = 1
+            if value > 20:
+                value = 20
+            return value
+
+        max_workers = 20 if jobs_supplier else job_limit_default
+        allowed_workers = {"value": read_job_limit()}
+        allowed_lock = threading.Lock()
+        allowed_cv = threading.Condition(allowed_lock)
+        monitor_stop = threading.Event()
+
+        def monitor_jobs() -> None:
+            last_value = None
+            while not monitor_stop.is_set():
+                current = read_job_limit()
+                if current != last_value:
+                    with allowed_cv:
+                        allowed_workers["value"] = current
+                        allowed_cv.notify_all()
+                    last_value = current
+                time.sleep(0.3)
+
+        if jobs_supplier:
+            threading.Thread(target=monitor_jobs, daemon=True).start()
+
+        print(f"Downloading concurrently using up to {max_workers} workers...")
+        work_queue: queue.Queue[tuple[int, dict] | None] = queue.Queue()
+
+        def worker(worker_id: int) -> None:
+            while True:
                 if stop_event and stop_event.is_set():
+                    pass
+                with allowed_cv:
+                    while worker_id > allowed_workers["value"]:
+                        if stop_event and stop_event.is_set():
+                            break
+                        allowed_cv.wait(timeout=0.5)
+                try:
+                    item = work_queue.get(timeout=0.2)
+                except queue.Empty:
+                    if stop_event and stop_event.is_set():
+                        continue
+                    else:
+                        continue
+                if item is None:
+                    work_queue.task_done()
                     break
-                futures.append(
-                    executor.submit(
-                        download_item,
+                idx, metadata = item
+                try:
+                    download_item(
                         idx,
                         metadata,
                         memories,
@@ -295,28 +347,14 @@ def download_all_memories(
                         defer_video_overlays,
                         overlays_only,
                         use_timestamp_filenames,
-                    remove_duplicates,
-                    duplicate_index,
-                    deferred_videos,
-                    deferred_lock,
-                    stats,
-                    stats_lock,
-                    progress_callback,
+                        remove_duplicates,
+                        duplicate_index,
+                        deferred_overlays,
+                        deferred_lock,
+                        stats,
+                        stats_lock,
+                        progress_callback,
                     )
-                )
-
-            for future in as_completed(futures):
-                if stop_event and stop_event.is_set():
-                    for f in futures:
-                        f.cancel()
-                    try:
-                        executor.shutdown(wait=False, cancel_futures=True)
-                    except TypeError:
-                        executor.shutdown(wait=False)
-                    return
-
-                try:
-                    future.result()
                 except Exception as e:
                     print(f"\nERROR: Worker crashed: {e}")
                 finally:
@@ -324,8 +362,28 @@ def download_all_memories(
                         completed_counter["count"] += 1
                         completed = completed_counter["count"]
                     print_progress(completed)
-        finally:
-            executor.shutdown(wait=True)
+                    work_queue.task_done()
+
+        threads = []
+        for worker_id in range(1, max_workers + 1):
+            t = threading.Thread(target=worker, args=(worker_id,), daemon=True)
+            t.start()
+            threads.append(t)
+
+        for item in items_to_download:
+            if stop_event and stop_event.is_set():
+                break
+            work_queue.put(item)
+
+        for _ in threads:
+            work_queue.put(None)
+
+        work_queue.join()
+        monitor_stop.set()
+        with allowed_cv:
+            allowed_cv.notify_all()
+        for t in threads:
+            t.join(timeout=0.5)
     else:
         for count, (idx, metadata) in enumerate(items_to_download, start=1):
             if stop_event and stop_event.is_set():
@@ -343,7 +401,7 @@ def download_all_memories(
                 use_timestamp_filenames,
                 remove_duplicates,
                 duplicate_index,
-                deferred_videos,
+                deferred_overlays,
                 deferred_lock,
                 stats,
                 stats_lock,
@@ -354,15 +412,15 @@ def download_all_memories(
     if stop_event and stop_event.is_set():
         return
 
-    if deferred_videos:
+    if deferred_overlays:
         print("\n" + "=" * 60)
-        print(f"Processing {len(deferred_videos)} deferred video overlay(s)...")
+        print(f"Processing {len(deferred_overlays)} deferred overlay merge(s)...")
         print("=" * 60)
 
-        for i, (file_num, metadata, files_saved) in enumerate(deferred_videos, start=1):
+        for i, (file_num, metadata, files_saved) in enumerate(deferred_overlays, start=1):
             if stop_event and stop_event.is_set():
                 return
-            print(f"\n({i}/{len(deferred_videos)}) Processing deferred video #{metadata['number']}")
+            print(f"\n({i}/{len(deferred_overlays)}) Processing deferred merge #{metadata['number']}")
 
             main_file = None
             overlay_file = None
@@ -381,8 +439,26 @@ def download_all_memories(
                     )
                     merged_file = output_path / output_filename
 
-                    print("  Merging video overlay (this may take a while)...")
-                    success = merge_video_overlay(main_file, overlay_file, merged_file)
+                    is_video = extension.lower() in [".mp4", ".mov", ".avi"]
+                    if is_video:
+                        print("  Merging video overlay (this may take a while)...")
+                        success = merge_video_overlay(main_file, overlay_file, merged_file)
+                    else:
+                        print("  Merging image overlay...")
+                        with open(main_file, "rb") as f:
+                            main_data = f.read()
+                        with open(overlay_file, "rb") as f:
+                            overlay_data = f.read()
+                        merged_data = merge_image_overlay(main_data, overlay_data)
+                        merged_data = add_exif_metadata(
+                            merged_data,
+                            metadata["date"],
+                            metadata["latitude"],
+                            metadata["longitude"],
+                        )
+                        with open(merged_file, "wb") as f:
+                            f.write(merged_data)
+                        success = merged_file.exists() and merged_file.stat().st_size > 0
 
                     if success:
                         with metadata_lock:
@@ -407,7 +483,7 @@ def download_all_memories(
 
                         print(f"  Success: {output_filename} ({merged_file.stat().st_size:,} bytes)")
                     else:
-                        print("  ERROR: Video merge failed, keeping separate files")
+                        print("  ERROR: Overlay merge failed, keeping separate files")
 
                 except Exception as e:
                     print(f"  ERROR: {str(e)}")
@@ -416,7 +492,7 @@ def download_all_memories(
         with metadata_lock:
             save_metadata(metadata_list, output_path)
         print("\n" + "=" * 60)
-        print("Deferred video processing complete!")
+        print("Deferred overlay processing complete!")
 
     metadata_file = output_path / "metadata.json"
     with metadata_lock:

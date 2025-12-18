@@ -82,7 +82,15 @@ def download_and_extract(
             is_video = str(main_ext).lower() in [".mp4", ".mov", ".avi"]
             merge_attempted = False
 
-            if merge_overlays and has_overlay and main_file and overlay_file:
+            allow_inline_merge = (
+                merge_overlays
+                and has_overlay
+                and main_file
+                and overlay_file
+                and not defer_video_overlays
+            )
+
+            if allow_inline_merge:
                 if is_image and deps.Image is not None:
                     try:
                         merged_data = merge_image_overlay(main_file, overlay_file)
@@ -130,7 +138,7 @@ def download_and_extract(
                         print("    Saving separate files instead...")
                         merge_overlays = False
 
-                elif is_video and deps.ffmpeg_available and not defer_video_overlays:
+                elif is_video and deps.ffmpeg_available:
                     try:
                         main_ext = extracted_files.get("main", {}).get("ext") or extension
                         overlay_ext = extracted_files.get("overlay", {}).get("ext") or ".png"
@@ -204,9 +212,15 @@ def download_and_extract(
                         merge_overlays = False
 
             if not merge_attempted:
-                is_deferred = is_video and has_overlay and defer_video_overlays and merge_overlays
+                is_deferred = (
+                    merge_overlays
+                    and has_overlay
+                    and main_file
+                    and overlay_file
+                    and defer_video_overlays
+                )
                 if is_deferred:
-                    print("    Deferring video overlay merge until end")
+                    print("    Deferring overlay merge until end")
 
                 for file_type, file_info in extracted_files.items():
                     file_data = file_info["data"]

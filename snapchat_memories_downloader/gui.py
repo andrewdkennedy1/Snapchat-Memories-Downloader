@@ -206,15 +206,25 @@ class SnapchatGui:
         is_test = self.mode_dropdown.value == "test"
         is_concurrent = bool(self.concurrent_cb.value) and not is_test
 
-        self.jobs_count.disabled = not is_concurrent
-        self.jobs_count.value = self.jobs_count.value or "5"
-
-        is_merge_enabled = bool(self.merge_cb.value)
-        self.defer_cb.disabled = not is_merge_enabled
-        if not is_merge_enabled:
-            self.defer_cb.value = False
+        if self.jobs_slider.value is None:
+            self.jobs_slider.value = 5
+        self.jobs_slider.disabled = not is_concurrent
+        self.jobs_warning.visible = is_concurrent
+        self.jobs_value_text.value = str(self._get_job_limit())
 
         self._safe_update()
+
+    def _get_job_limit(self) -> int:
+        value = self.jobs_slider.value
+        try:
+            count = int(round(float(value)))
+        except (TypeError, ValueError):
+            count = 5
+        if count < 1:
+            count = 1
+        if count > 20:
+            count = 20
+        return count
 
     def _pick_html(self, _) -> None:
         self.file_picker.pick_files(allowed_extensions=["html"])
@@ -350,15 +360,11 @@ class SnapchatGui:
         is_test = self.mode_dropdown.value == "test"
         if is_test:
             self._append_log_line("Test mode: downloading first 3 items")
+        self._append_log_line("Overlay merges will run after downloads complete.")
 
-        jobs_value = self.jobs_count.value.strip() if self.jobs_count.value else ""
-        if self.jobs_count.disabled:
-            jobs = 1
-        else:
-            if not jobs_value.isdigit() or int(jobs_value) < 1:
-                self._append_log_line("Error: Jobs must be a positive integer.")
-                return
-            jobs = int(jobs_value)
+        jobs = 1 if self.jobs_slider.disabled else self._get_job_limit()
+        if jobs > 15:
+            self._append_log_line("Warning: high job counts can spike CPU usage.")
 
         self.stop_event.clear()
         self._set_running(True)
@@ -370,8 +376,8 @@ class SnapchatGui:
             "output_dir": self.output_input.value,
             "resume": self.mode_dropdown.value == "resume",
             "retry_failed": self.mode_dropdown.value == "retry-failed",
-            "merge_overlays": bool(self.merge_cb.value),
-            "defer_video_overlays": bool(self.defer_cb.value),
+            "merge_overlays": True,
+            "defer_video_overlays": True,
             "videos_only": self.media_dropdown.value == "videos",
             "pictures_only": self.media_dropdown.value == "pictures",
             "overlays_only": self.media_dropdown.value == "overlays",
@@ -380,6 +386,7 @@ class SnapchatGui:
             "join_multi_snaps_enabled": bool(self.join_multi_cb.value),
             "concurrent": bool(self.concurrent_cb.value) and not is_test,
             "jobs": jobs,
+            "jobs_supplier": (self._get_job_limit if bool(self.concurrent_cb.value) and not is_test else None),
             "limit": 3 if is_test else None,
             "stop_event": self.stop_event,
             "progress_callback": self.pump.progress_callback if self.pump else None,
