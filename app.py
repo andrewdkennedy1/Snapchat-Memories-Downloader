@@ -31,6 +31,7 @@ except ImportError:
     _HAS_FLET = False
 
 from snapchat_memories_downloader.deps import requests, ensure_ffmpeg
+from snapchat_memories_downloader.default_paths import find_memories_history_html
 from snapchat_memories_downloader.downloader import download_and_extract
 from snapchat_memories_downloader.files import (
     get_file_extension,
@@ -83,7 +84,14 @@ def main():
         return argparse.SUPPRESS if _HAS_GOOEY else help_text
 
     setup_group = parser.add_argument_group("Setup")
-    add_arg(setup_group, "html_file", nargs="?", default="html/memories_history.html", widget="FileChooser")
+    default_html = find_memories_history_html()
+    add_arg(
+        setup_group,
+        "html_file",
+        nargs="?",
+        default=str(default_html) if default_html else "",
+        widget="FileChooser",
+    )
     add_arg(setup_group, "-o", "--output", type=str, default="memories", widget="DirChooser")
 
     download_group = parser.add_argument_group("Download Options")
@@ -116,6 +124,17 @@ def main():
     if args.merge_existing:
         merge_existing_files(args.merge_existing)
         sys.exit(0)
+
+    if not args.html_file:
+        guessed = find_memories_history_html()
+        if guessed:
+            args.html_file = str(guessed)
+
+    if not args.html_file:
+        print("Error: Please provide the path to memories_history.html")
+        print("Tip: You can drag/drop the file onto the executable, or run with:")
+        print("  SnapchatMemoriesDownloader.exe <path-to-memories_history.html>")
+        sys.exit(1)
 
     html_path = Path(args.html_file)
     if html_path.is_dir():

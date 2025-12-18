@@ -5,6 +5,7 @@ from pathlib import Path
 
 import flet as ft
 
+from snapchat_memories_downloader.default_paths import suggest_output_dir_for_html
 from snapchat_memories_downloader.deps import ensure_ffmpeg
 from snapchat_memories_downloader.gui_layout import build_config_section, build_logs_section, build_setup_section
 from snapchat_memories_downloader.gui_pump import UiEventPump
@@ -23,6 +24,8 @@ class SnapchatGui:
         self.stop_event = threading.Event()
         self.pump: UiEventPump | None = None
         self._last_report_file: Path | None = None
+        self._output_dir_user_selected = False
+        self._suppress_output_change_event = False
         self._setup_page()
         self._build_ui()
         self.pump = UiEventPump(
@@ -36,6 +39,7 @@ class SnapchatGui:
         )
         self._sync_option_states()
         self._start_ffmpeg_preflight()
+        self._start_default_html_count_if_present()
 
     def _setup_page(self) -> None:
         self.page.title = "Snapchat Memories Downloader"
@@ -99,6 +103,17 @@ class SnapchatGui:
         self.file_picker = ft.FilePicker(on_result=self._on_file_result)
         self.dir_picker = ft.FilePicker(on_result=self._on_dir_result)
         self.page.overlay.extend([self.file_picker, self.dir_picker])
+
+    def _start_default_html_count_if_present(self) -> None:
+        html_value = (self.html_input.value or "").strip()
+        if not html_value:
+            return
+        path = Path(html_value).expanduser()
+        if not path.exists():
+            return
+        self.html_summary_text.value = "Parsing HTML..."
+        self._safe_update()
+        threading.Thread(target=self._update_html_count, args=(str(path),), daemon=True).start()
 
     def _start_ffmpeg_preflight(self) -> None:
         threading.Thread(target=self._run_ffmpeg_preflight, daemon=True).start()
@@ -214,6 +229,12 @@ class SnapchatGui:
         if e.files:
             self.html_input.value = e.files[0].path
             self.html_summary_text.value = "Parsing HTML..."
+            if not self._output_dir_user_selected:
+                try:
+                    suggested = suggest_output_dir_for_html(Path(self.html_input.value))
+                    self._set_output_dir_value(suggested)
+                except Exception:
+                    pass
             self._safe_update()
             threading.Thread(
                 target=self._update_html_count, args=(self.html_input.value,), daemon=True
@@ -240,8 +261,21 @@ class SnapchatGui:
 
     def _on_dir_result(self, e: ft.FilePickerResultEvent) -> None:
         if e.path:
+            self._output_dir_user_selected = True
             self.output_input.value = e.path
             self._safe_update()
+
+    def _on_output_change(self, _) -> None:
+        if self._suppress_output_change_event:
+            return
+        self._output_dir_user_selected = True
+
+    def _set_output_dir_value(self, value: Path) -> None:
+        self._suppress_output_change_event = True
+        try:
+            self.output_input.value = str(value)
+        finally:
+            self._suppress_output_change_event = False
 
     def _open_output_folder(self) -> None:
         try:
@@ -280,12 +314,18 @@ class SnapchatGui:
         fn()
 
     def _validate_inputs(self) -> tuple[bool, str]:
-        html_path = Path(self.html_input.value).expanduser()
+        html_raw = (self.html_input.value or "").strip()
+        if not html_raw:
+            return False, "Please select memories_history.html"
+        html_path = Path(html_raw).expanduser()
         if not html_path.exists():
             return False, f"HTML file not found: {html_path}"
         if html_path.suffix.lower() != ".html":
             return False, "HTML file must end with .html"
-        out_dir = Path(self.output_input.value).expanduser()
+        out_raw = (self.output_input.value or "").strip()
+        if out_raw == "":
+            return False, "Output directory is required"
+        out_dir = Path(out_raw).expanduser()
         if str(out_dir).strip() == "":
             return False, "Output directory is required"
         return True, ""
