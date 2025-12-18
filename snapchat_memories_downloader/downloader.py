@@ -8,6 +8,7 @@ from .deps import Image, ffmpeg_available, requests
 from .duplicates import is_duplicate_file
 from .exif_utils import add_exif_metadata
 from .files import generate_filename, parse_date_to_timestamp, set_file_timestamp
+from .magic_bytes import detect_file_kind, extension_for_kind
 from .overlay import merge_image_overlay, merge_video_overlay
 
 
@@ -66,7 +67,8 @@ def download_and_extract(
                     main_file = file_data
                     extracted_files["main"] = {"data": file_data, "ext": original_ext}
 
-            is_image = extension.lower() in [
+            main_ext = extracted_files.get("main", {}).get("ext") or extension
+            is_image = str(main_ext).lower() in [
                 ".jpg",
                 ".jpeg",
                 ".png",
@@ -76,7 +78,7 @@ def download_and_extract(
                 ".tiff",
                 ".tif",
             ]
-            is_video = extension.lower() in [".mp4", ".mov", ".avi"]
+            is_video = str(main_ext).lower() in [".mp4", ".mov", ".avi"]
             merge_attempted = False
 
             if merge_overlays and has_overlay and main_file and overlay_file:
@@ -123,10 +125,13 @@ def download_and_extract(
 
                 elif is_video and ffmpeg_available and not defer_video_overlays:
                     try:
-                        temp_main = base_path / f"{file_num}-temp-main{extension}"
-                        temp_overlay = base_path / f"{file_num}-temp-overlay{extension}"
+                        main_ext = extracted_files.get("main", {}).get("ext") or extension
+                        overlay_ext = extracted_files.get("overlay", {}).get("ext") or ".png"
+
+                        temp_main = base_path / f"{file_num}-temp-main{main_ext}"
+                        temp_overlay = base_path / f"{file_num}-temp-overlay{overlay_ext}"
                         output_filename = generate_filename(
-                            date_str, extension, use_timestamp_filenames, file_num
+                            date_str, str(main_ext), use_timestamp_filenames, file_num
                         )
                         output_path = base_path / output_filename
 
@@ -254,14 +259,17 @@ def download_and_extract(
         if overlays_only:
             return []
 
-        is_video = extension.lower() in [".mp4", ".mov", ".avi"]
+        kind = detect_file_kind(content)
+        detected_ext = extension_for_kind(kind, extension)
+
+        is_video = detected_ext.lower() in [".mp4", ".mov", ".avi"]
         if is_video and len(content) >= 8:
             if content[4:8] not in [b"ftyp", b"mdat", b"moov", b"wide"]:
                 print("    WARNING: File may not be a valid video (invalid MP4 signature)")
                 print(f"    First 20 bytes: {content[:20]}")
                 print("    This might be an HTML error page or expired download link")
 
-        is_image = extension.lower() in [
+        is_image = detected_ext.lower() in [
             ".jpg",
             ".jpeg",
             ".png",
@@ -287,7 +295,7 @@ def download_and_extract(
             )
         else:
             output_filename = generate_filename(
-                date_str, extension, use_timestamp_filenames, file_num
+                date_str, detected_ext, use_timestamp_filenames, file_num
             )
             output_path = base_path / output_filename
             with open(output_path, "wb") as f:
@@ -295,4 +303,3 @@ def download_and_extract(
             files_saved.append({"path": output_filename, "size": len(content), "type": "single"})
 
     return files_saved
-

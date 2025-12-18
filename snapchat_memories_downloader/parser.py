@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from html.parser import HTMLParser
+from typing import Callable
 
 
 DOWNLOAD_URL_RE = re.compile(
@@ -57,7 +58,7 @@ class MemoriesParser(HTMLParser):
             return
 
         if DATE_RE.fullmatch(data):
-            self.current_row["date"] = data
+                self.current_row["date"] = data
         elif data in ["Image", "Video"]:
             self.current_row["media_type"] = data
         elif "Latitude, Longitude:" in data:
@@ -77,8 +78,9 @@ class MemoriesParser(HTMLParser):
             self.current_row = {}
 
 
-def parse_html_file(html_path: str) -> list:
-    print(f"Parsing {html_path}...")
+def parse_html_file(html_path: str, log: Callable[[str], None] | None = print) -> list:
+    if log:
+        log(f"Parsing {html_path}...")
     parser = MemoriesParser()
     with open(html_path, "r", encoding="utf-8", errors="replace") as f:
         while True:
@@ -87,5 +89,6 @@ def parse_html_file(html_path: str) -> list:
                 break
             parser.feed(chunk)
 
-    print(f"Found {len(parser.memories)} memories")
+    if log:
+        log(f"Found {len(parser.memories)} memories")
     return parser.memories

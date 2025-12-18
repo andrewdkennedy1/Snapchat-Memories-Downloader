@@ -14,6 +14,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from .subprocess_utils import run_capture
+
 try:
     import requests  # type: ignore
 except ImportError:
@@ -39,13 +41,7 @@ except ImportError:
 def _check_ffmpeg_available() -> bool:
     try:
         return (
-            subprocess.run(
-                ["ffmpeg", "-version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=5,
-                check=False,
-            ).returncode
+            run_capture(["ffmpeg", "-version"], timeout=5).returncode
             == 0
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -56,4 +52,3 @@ ffmpeg_available = _check_ffmpeg_available()
 if not ffmpeg_available:
     print("Warning: ffmpeg not found. Video overlay merging will be disabled.")
     print("Install: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")
-

@@ -44,6 +44,7 @@ def download_item(
     memories: list,
     output_path: Path,
     metadata_list: list,
+    stop_event: threading.Event | None,
     merge_overlays: bool,
     defer_video_overlays: bool,
     overlays_only: bool,
@@ -53,18 +54,29 @@ def download_item(
     deferred_lock: threading.Lock,
     stats: dict,
     stats_lock: threading.Lock,
+    progress_callback: callable = None,
 ) -> None:
+    if stop_event and stop_event.is_set():
+        return
     memory = memories[idx]
     file_num = f"{metadata['number']:02d}"
     extension = get_file_extension(metadata.get("media_type", "Image"))
 
-    print(f"\n# {metadata['number']}")
-    print(f"  Date: {metadata['date']}")
-    print(f"  Type: {metadata['media_type']}")
-    print(f"  Location: {metadata['latitude']}, {metadata['longitude']}")
+    def log(msg: str):
+        print(msg)
+        if progress_callback:
+            progress_callback({"type": "log", "message": msg})
+
+    log(f"\n# {metadata['number']}")
+    log(f"  Date: {metadata['date']}")
+    log(f"  Type: {metadata['media_type']}")
+    log(f"  Location: {metadata['latitude']}, {metadata['longitude']}")
 
     if metadata.get("status") == "success" and metadata.get("files"):
-        print("  Already downloaded, skipping...")
+        log("  Already downloaded, skipping...")
+        return
+
+    if stop_event and stop_event.is_set():
         return
 
     with metadata_lock:
@@ -87,8 +99,11 @@ def download_item(
             remove_duplicates,
         )
 
+        if stop_event and stop_event.is_set():
+            return
+
         if len(files_saved) == 0:
-            print("  Skipped: No overlay detected (overlays-only mode)")
+            log("  Skipped: No overlay detected (overlays-only mode)")
             with metadata_lock:
                 metadata["status"] = "skipped"
                 metadata["skip_reason"] = "no_overlay"
@@ -96,12 +111,12 @@ def download_item(
             return
 
         if len(files_saved) > 1:
-            print(f"  ZIP extracted: {len(files_saved)} files")
+            log(f"  ZIP extracted: {len(files_saved)} files")
             for file_info in files_saved:
-                print(f"    - {file_info['path']} ({file_info['size']:,} bytes)")
+                log(f"    - {file_info['path']} ({file_info['size']:,} bytes)")
         else:
             downloaded_file = files_saved[0]
-            print(
+            log(
                 f"  Downloaded: {downloaded_file['path']} ({downloaded_file['size']:,} bytes)"
             )
 
@@ -110,7 +125,7 @@ def download_item(
             for file_info in files_saved:
                 file_path = output_path / file_info["path"]
                 set_file_timestamp(file_path, timestamp)
-            print(f"  Timestamp set to: {metadata['date']}")
+            log(f"  Timestamp set to: {metadata['date']}")
 
         with metadata_lock:
             metadata["status"] = "success"
@@ -128,7 +143,7 @@ def download_item(
             save_metadata(metadata_list, output_path)
 
     except (OSError, requests.RequestException, zipfile.BadZipFile) as e:
-        print(f"  ERROR: {str(e)}")
+        log(f"  ERROR: {str(e)}")
         with metadata_lock:
             metadata["status"] = "failed"
             metadata["error"] = str(e)
@@ -150,8 +165,13 @@ def download_all_memories(
     join_multi_snaps_enabled: bool = False,
     concurrent: bool = False,
     jobs: int = 5,
+    limit: int | None = None,
+    stop_event: threading.Event | None = None,
+    progress_callback: callable = None,
 ) -> None:
     memories = parse_html_file(html_path)
+    if limit is not None and limit >= 0:
+        memories = memories[:limit]
     if not memories:
         print("No memories found in HTML file!")
         return
@@ -161,25 +181,33 @@ def download_all_memories(
 
     metadata_list = initialize_metadata(memories, output_path)
 
-    if videos_only:
-        items_to_download = [(i, m) for i, m in enumerate(metadata_list) if m.get("media_type") == "Video"]
-        print(f"\nProcessing videos only: {len(items_to_download)} videos to download")
-    elif pictures_only:
-        items_to_download = [(i, m) for i, m in enumerate(metadata_list) if m.get("media_type") == "Image"]
-        print(f"\nProcessing pictures only: {len(items_to_download)} pictures to download")
-    elif resume:
+    if resume:
         items_to_download = [
             (i, m)
             for i, m in enumerate(metadata_list)
             if m.get("status") in ["pending", "in_progress", "failed"]
         ]
-        print(f"\nResuming: {len(items_to_download)} items to download")
+        mode_label = "Resuming"
     elif retry_failed:
         items_to_download = [(i, m) for i, m in enumerate(metadata_list) if m.get("status") == "failed"]
-        print(f"\nRetrying: {len(items_to_download)} failed items")
+        mode_label = "Retrying failed"
     else:
         items_to_download = list(enumerate(metadata_list))
-        print(f"\nDownloading {len(items_to_download)} memories to {output_dir}/")
+        mode_label = "Downloading"
+
+    if videos_only:
+        items_to_download = [(i, m) for i, m in items_to_download if m.get("media_type") == "Video"]
+        media_label = "videos only"
+    elif pictures_only:
+        items_to_download = [(i, m) for i, m in items_to_download if m.get("media_type") == "Image"]
+        media_label = "pictures only"
+    else:
+        media_label = "all media"
+
+    if resume or retry_failed:
+        print(f"\n{mode_label} ({media_label}): {len(items_to_download)} items to download")
+    else:
+        print(f"\n{mode_label} ({media_label}) {len(items_to_download)} memories to {output_dir}/")
 
     if not items_to_download:
         print("All selected memories already downloaded.")
@@ -193,6 +221,8 @@ def download_all_memories(
 
     stats = {"total_bytes": 0, "start_time": time.time()}
     stats_lock = threading.Lock()
+    completed_counter = {"count": 0}
+    counter_lock = threading.Lock()
 
     def print_progress(completed: int):
         elapsed = time.time() - stats["start_time"]
@@ -201,50 +231,82 @@ def download_all_memories(
         speed = total_b / elapsed if elapsed > 0 else 0
         speed_fmt = format_speed(speed)
         size_fmt = format_size(total_b)
-        print(f"[{completed}/{total_items}] Speed: {speed_fmt} (Total: {size_fmt})")
+        msg = f"[{completed}/{total_items}] Speed: {speed_fmt} (Total: {size_fmt})"
+        print(msg)
+        if progress_callback:
+            progress_callback({
+                "type": "progress",
+                "completed": completed,
+                "total": total_items,
+                "speed": speed_fmt,
+                "total_size": size_fmt,
+                "message": msg
+            })
 
     print_progress(0)
 
     if concurrent and total_items > 1:
         print(f"Downloading concurrently using {jobs} jobs...")
-        with ThreadPoolExecutor(max_workers=jobs) as executor:
-            futures = [
-                executor.submit(
-                    download_item,
-                    idx,
-                    metadata,
-                    memories,
-                    output_path,
-                    metadata_list,
-                    merge_overlays,
-                    defer_video_overlays,
-                    overlays_only,
-                    use_timestamp_filenames,
-                    remove_duplicates,
-                    deferred_videos,
-                    deferred_lock,
-                    stats,
-                    stats_lock,
+        executor = ThreadPoolExecutor(max_workers=jobs)
+        futures = []
+        try:
+            for idx, metadata in items_to_download:
+                if stop_event and stop_event.is_set():
+                    break
+                futures.append(
+                    executor.submit(
+                        download_item,
+                        idx,
+                        metadata,
+                        memories,
+                        output_path,
+                        metadata_list,
+                        stop_event,
+                        merge_overlays,
+                        defer_video_overlays,
+                        overlays_only,
+                        use_timestamp_filenames,
+                        remove_duplicates,
+                        deferred_videos,
+                        deferred_lock,
+                        stats,
+                        stats_lock,
+                        progress_callback,
+                    )
                 )
-                for idx, metadata in items_to_download
-            ]
 
-            completed = 0
             for future in as_completed(futures):
+                if stop_event and stop_event.is_set():
+                    for f in futures:
+                        f.cancel()
+                    try:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                    except TypeError:
+                        executor.shutdown(wait=False)
+                    return
+
                 try:
                     future.result()
                 except Exception as e:
                     print(f"\nERROR: Worker crashed: {e}")
-                completed += 1
-                print_progress(completed)
+                finally:
+                    with counter_lock:
+                        completed_counter["count"] += 1
+                        completed = completed_counter["count"]
+                    print_progress(completed)
+        finally:
+            executor.shutdown(wait=True)
     else:
         for count, (idx, metadata) in enumerate(items_to_download, start=1):
+            if stop_event and stop_event.is_set():
+                break
             download_item(
                 idx,
                 metadata,
                 memories,
                 output_path,
                 metadata_list,
+                stop_event,
                 merge_overlays,
                 defer_video_overlays,
                 overlays_only,
@@ -254,8 +316,12 @@ def download_all_memories(
                 deferred_lock,
                 stats,
                 stats_lock,
+                progress_callback,
             )
             print_progress(count)
+
+    if stop_event and stop_event.is_set():
+        return
 
     if deferred_videos:
         print("\n" + "=" * 60)
@@ -263,6 +329,8 @@ def download_all_memories(
         print("=" * 60)
 
         for i, (file_num, metadata, files_saved) in enumerate(deferred_videos, start=1):
+            if stop_event and stop_event.is_set():
+                return
             print(f"\n({i}/{len(deferred_videos)}) Processing deferred video #{metadata['number']}")
 
             main_file = None
@@ -318,6 +386,9 @@ def download_all_memories(
     metadata_file = output_path / "metadata.json"
     with metadata_lock:
         save_metadata(metadata_list, output_path)
+
+    if stop_event and stop_event.is_set():
+        return
 
     print("\n" + "=" * 60)
     print("Download complete!")

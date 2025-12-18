@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 from .deps import ffmpeg_available
+from .subprocess_utils import run_capture
 
 
 def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dict:
@@ -78,13 +78,7 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
                 str(output_path),
             ]
 
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=300,
-                check=False,
-            )
+            result = run_capture(cmd, timeout=300)
 
             if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 1000:
                 print(f"    Joined: {output_name} ({output_path.stat().st_size:,} bytes)")
@@ -115,4 +109,3 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
     print("=" * 60)
 
     return {"groups_found": len(groups), "videos_joined": total_videos_joined, "files_deleted": files_deleted}
-

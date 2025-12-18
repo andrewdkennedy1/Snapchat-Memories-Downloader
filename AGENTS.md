@@ -6,10 +6,31 @@ This file provides guidance to LLM Programming agents when working with code in 
 
 Dual-implementation Snapchat Memories downloader with web and Python versions that parse `memories_history.html` exports to download media with metadata preservation.
 
-**Web Version**: `docs/index.html` (2743 lines) - Client-side processing with FFmpeg.wasm for video overlays
-**Python Version**: `app.py` - GUI/CLI entrypoint (implementation is in `snapchat_memories_downloader/`)
+**Web Version**: `docs/index.html` - Client-side processing with FFmpeg.wasm for video overlays
+**Python Version**: `app.py` - GUI/CLI entrypoint with modular implementation in `snapchat_memories_downloader/`
 
 Both versions share identical architecture but differ in implementation details and feature sets.
+
+## Code Architecture Principles
+
+**Maintain modular design - avoid monolithic files:**
+
+- **Single Responsibility**: Each module handles one concern (parsing, downloading, EXIF, etc.)
+- **Small Functions**: Keep functions under 50 lines, extract complex logic into helpers
+- **Clear Interfaces**: Use type hints and docstrings for module boundaries
+- **Dependency Injection**: Pass dependencies as parameters rather than importing globally
+- **Separation of Concerns**: Keep I/O, business logic, and presentation separate
+
+**When adding features:**
+- Create new modules for distinct functionality
+- Extract shared utilities to separate files
+- Avoid adding to existing large functions - refactor into smaller pieces
+- Use composition over inheritance
+
+**File size guidelines:**
+- Modules should stay under 500 lines
+- If a module grows beyond this, split by logical boundaries
+- Extract constants, utilities, and data structures to separate files
 
 ## Development Commands
 
@@ -145,15 +166,27 @@ Detects videos within 10-second time windows (indicates multi-snap stories):
 ```
 .
 ├── app.py                   # Python GUI/CLI entrypoint
-├── download_memories.py      # Compatibility shim
+├── snapchat_memories_downloader/  # Modular Python implementation
+│   ├── __init__.py           # Package exports
+│   ├── orchestrator.py       # Main download orchestration
+│   ├── parser.py             # HTML parsing logic
+│   ├── downloader.py         # Core download functionality
+│   ├── files.py              # File operations and naming
+│   ├── metadata_store.py     # Metadata persistence
+│   ├── overlay.py            # Overlay merging (images/videos)
+│   ├── exif_utils.py         # EXIF metadata handling
+│   ├── duplicates.py         # Duplicate detection
+│   ├── multisnap.py          # Multi-snap video joining
+│   ├── merge_existing.py     # Retroactive overlay merging
+│   └── deps.py               # Dependency management
 ├── docs/
-│   ├── index.html            # Web version (2743 lines, single file)
+│   ├── index.html            # Web version (single file)
 │   ├── ffmpeg/               # FFmpeg.wasm artifacts (auto-synced)
 │   │   ├── ffmpeg.js
 │   │   ├── ffmpeg-core.js
 │   │   └── ffmpeg-core.wasm
 │   └── .nojekyll             # Disable Jekyll for GitHub Pages
-├── test_files/               # Test HTML exports
+├── tests/                    # Test files and fixtures
 ├── requirements.txt          # Python dependencies
 ├── setup.sh                  # Venv setup script
 └── package.json              # FFmpeg.wasm dependencies only

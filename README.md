@@ -119,8 +119,6 @@ python app.py
 # 3. Done! Files saved to ./memories/
 ```
 
-Note: Older instructions may reference `download_memories.py`; it still works as a compatibility shim.
-
 ### Setup
 
 1. Run the setup script:
@@ -381,9 +379,21 @@ For merged overlays (when using `--merge-overlays` flag):
 │   ├── 02.jpg                    # or 2024.11.30-14.30.45.jpg (with --timestamp-filenames)
 │   ├── 03.jpg
 │   └── metadata.json
+├── snapchat_memories_downloader/ # Modular Python implementation
+│   ├── __init__.py               # Package exports
+│   ├── orchestrator.py           # Main download orchestration
+│   ├── parser.py                 # HTML parsing logic
+│   ├── downloader.py             # Core download functionality
+│   ├── files.py                  # File operations and naming
+│   ├── metadata_store.py         # Metadata persistence
+│   ├── overlay.py                # Overlay merging (images/videos)
+│   ├── exif_utils.py             # EXIF metadata handling
+│   ├── duplicates.py             # Duplicate detection
+│   ├── multisnap.py              # Multi-snap video joining
+│   └── merge_existing.py         # Retroactive overlay merging
+├── tests/                        # Test files and fixtures
 ├── venv/                        # Python virtual environment
 ├── app.py                       # Python GUI/CLI entrypoint
-├── download_memories.py         # Compatibility shim
 ├── requirements.txt             # Python dependencies
 ├── setup.sh                     # Setup script
 ├── .gitignore                   # Git ignore file
@@ -478,6 +488,14 @@ If you see: `Warning: ffmpeg not found. Video overlay merging will be disabled.`
 
 The tool will still work without FFmpeg - videos will be saved as separate
 `-main` and `-overlay` files.
+
+### FFmpeg Merge Fails (Video Overlays)
+
+If video overlay merging fails with `Conversion failed!`:
+
+- Make sure your FFmpeg build includes the `libx264` video encoder.
+- Some videos may have audio codecs that can’t be stream-copied into MP4; the downloader will retry by re-encoding audio to AAC.
+- If it still fails, the tool will keep the separate `-main`/`-overlay` files so you can merge later.
 
 ### Web Version: FFmpeg.wasm CORS Error
 
