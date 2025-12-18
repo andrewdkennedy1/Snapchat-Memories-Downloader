@@ -59,10 +59,15 @@ def build_ffmpeg_overlay_command(
     output_path: Path,
     *,
     copy_audio: bool,
+    encoder: str | None = None,
 ) -> list[str]:
     overlay_is_image = overlay_path.suffix.lower() in _IMAGE_EXTS
+    selected_encoder = encoder or deps.get_best_h264_encoder()
+    hwaccel_args = deps.get_hwaccel_args(selected_encoder)
 
-    cmd = [deps.ffmpeg_path or "ffmpeg", "-hide_banner"]
+    cmd = [deps.ffmpeg_path or "ffmpeg", "-hide_banner", "-nostdin"]
+    if hwaccel_args:
+        cmd += hwaccel_args
     cmd += ["-y", "-i", str(main_path)]
     if overlay_is_image:
         cmd += ["-loop", "1", "-i", str(overlay_path)]
@@ -76,8 +81,6 @@ def build_ffmpeg_overlay_command(
         "[base_s][ovr_s]overlay=eof_action=pass:format=auto[outv]"
     )
 
-    encoder = deps.get_best_h264_encoder()
-    
     cmd += [
         "-filter_complex",
         filter_complex,
@@ -86,19 +89,11 @@ def build_ffmpeg_overlay_command(
         "-map",
         "0:a?",
         "-c:v",
-        encoder,
+        selected_encoder,
     ]
 
     # Encoder specific settings
-    if "nvenc" in encoder:
-        cmd += ["-rc", "vbr", "-cq", "23", "-preset", "p4"]
-    elif "amf" in encoder:
-        cmd += ["-rc", "vbaq", "-quality", "balanced"]
-    elif "qsv" in encoder:
-        cmd += ["-global_quality", "23", "-preset", "balanced"]
-    else:
-        # Default libx264 settings
-        cmd += ["-preset", "medium", "-crf", "23"]
+    cmd += _encoder_settings(selected_encoder)
 
     cmd += [
         "-pix_fmt",
@@ -107,13 +102,26 @@ def build_ffmpeg_overlay_command(
         "+faststart",
     ]
 
-    if copy_audio:
-        cmd += ["-c:a", "copy"]
-    else:
-        cmd += ["-c:a", "aac", "-b:a", "192k"]
-
+    cmd += _audio_settings(copy_audio)
     cmd += [str(output_path)]
     return cmd
+
+
+def _encoder_settings(encoder: str) -> list[str]:
+    if "nvenc" in encoder:
+        return ["-rc", "vbr", "-cq", "23", "-preset", "p4"]
+    if "amf" in encoder:
+        return ["-rc", "vbaq", "-quality", "balanced"]
+    if "qsv" in encoder:
+        return ["-global_quality", "23", "-preset", "balanced"]
+    # Default libx264 settings
+    return ["-preset", "medium", "-crf", "23"]
+
+
+def _audio_settings(copy_audio: bool) -> list[str]:
+    if copy_audio:
+        return ["-c:a", "copy"]
+    return ["-c:a", "aac", "-b:a", "192k"]
 
 
 def _summarize_ffmpeg_stderr(stderr_text: str) -> str:
@@ -144,36 +152,42 @@ def merge_video_overlay(main_path: Path, overlay_path: Path, output_path: Path) 
         raise RuntimeError("FFmpeg is not available")
 
     try:
-        for copy_audio in (True, False):
-            cmd = build_ffmpeg_overlay_command(
-                main_path,
-                overlay_path,
-                output_path,
-                copy_audio=copy_audio,
-            )
-            result = run_capture(cmd, timeout=600)
+        encoder_candidates = _encoder_fallbacks()
+        for enc_idx, encoder in enumerate(encoder_candidates):
+            if enc_idx > 0 and encoder == "libx264":
+                print("    FFmpeg: GPU encoder failed, retrying with CPU...")
 
-            if (
-                result.returncode == 0
-                and output_path.exists()
-                and output_path.stat().st_size > 1000
-            ):
-                return True
+            for copy_audio in (True, False):
+                cmd = build_ffmpeg_overlay_command(
+                    main_path,
+                    overlay_path,
+                    output_path,
+                    copy_audio=copy_audio,
+                    encoder=encoder,
+                )
+                result = run_capture(cmd, timeout=600)
 
-            if output_path.exists():
-                try:
-                    output_path.unlink()
-                except Exception:
-                    pass
+                if (
+                    result.returncode == 0
+                    and output_path.exists()
+                    and output_path.stat().st_size > 1000
+                ):
+                    return True
 
-            stderr_text = result.stderr.decode("utf-8", errors="ignore")
-            audio_mode = "copy" if copy_audio else "aac"
-            print(
-                f"    FFmpeg failed (exit {result.returncode}, audio={audio_mode})"
-            )
-            summary = _summarize_ffmpeg_stderr(stderr_text)
-            if summary:
-                print(summary)
+                if output_path.exists():
+                    try:
+                        output_path.unlink()
+                    except Exception:
+                        pass
+
+                stderr_text = result.stderr.decode("utf-8", errors="ignore")
+                audio_mode = "copy" if copy_audio else "aac"
+                print(
+                    f"    FFmpeg failed (exit {result.returncode}, encoder={encoder}, audio={audio_mode})"
+                )
+                summary = _summarize_ffmpeg_stderr(stderr_text)
+                if summary:
+                    print(summary)
 
         return False
 
@@ -183,3 +197,10 @@ def merge_video_overlay(main_path: Path, overlay_path: Path, output_path: Path) 
     except Exception as e:
         print(f"    FFmpeg exception: {e}")
         return False
+
+
+def _encoder_fallbacks() -> list[str]:
+    encoder = deps.get_best_h264_encoder()
+    if deps.is_gpu_encoder(encoder):
+        return [encoder, "libx264"]
+    return [encoder]

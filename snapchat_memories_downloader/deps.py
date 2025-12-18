@@ -97,6 +97,7 @@ def _check_ffmpeg_available() -> str | None:
 
 ffmpeg_path = _check_ffmpeg_available()
 ffmpeg_available = ffmpeg_path is not None
+_cached_encoders: list[str] | None = None
 
 if not ffmpeg_available:
     print("Warning: ffmpeg not found. Video overlay merging will be disabled.")
@@ -109,7 +110,7 @@ def ensure_ffmpeg(interactive: bool = True, log: Callable[[str], None] | None = 
     Ensure ffmpeg is available. If not, and on Windows, download it.
     Returns True if ffmpeg is available (after download if necessary).
     """
-    global ffmpeg_path, ffmpeg_available
+    global ffmpeg_path, ffmpeg_available, _cached_encoders
 
     def emit(message: str) -> None:
         if log:
@@ -175,6 +176,7 @@ def ensure_ffmpeg(interactive: bool = True, log: Callable[[str], None] | None = 
         # Re-check
         ffmpeg_path = _check_ffmpeg_available()
         ffmpeg_available = ffmpeg_path is not None
+        _cached_encoders = None
         return ffmpeg_available
 
     except Exception as e:
@@ -186,7 +188,11 @@ def get_available_encoders() -> list[str]:
     """Probe FFmpeg for available video encoders."""
     if not ffmpeg_available:
         return []
-    
+
+    global _cached_encoders
+    if _cached_encoders is not None:
+        return list(_cached_encoders)
+
     try:
         # Run ffmpeg -encoders and look for h264 related ones
         result = run_capture([ffmpeg_path or "ffmpeg", "-encoders"], timeout=5)
@@ -203,24 +209,40 @@ def get_available_encoders() -> list[str]:
                     # e.g. " V..... libx264             libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"
                     encoder_name = parts[1]
                     encoders.append(encoder_name)
-        return encoders
+        _cached_encoders = encoders
+        return list(encoders)
     except Exception:
         return []
+
+
+_GPU_ENCODERS = {"h264_nvenc", "h264_amf", "h264_qsv"}
+_H264_ENCODER_PRIORITY = [
+    "h264_nvenc",  # NVIDIA
+    "h264_amf",    # AMD
+    "h264_qsv",    # Intel
+    "libx264",     # Software (Fallback)
+]
+
+
+def is_gpu_encoder(encoder: str) -> bool:
+    return encoder in _GPU_ENCODERS
+
+
+def get_hwaccel_args(encoder: str) -> list[str]:
+    if encoder == "h264_nvenc":
+        return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+    if encoder == "h264_amf":
+        return ["-hwaccel", "d3d11va"]
+    if encoder == "h264_qsv":
+        return ["-hwaccel", "qsv"]
+    return []
 
 
 def get_best_h264_encoder() -> str:
     """Find the best H.264 encoder available, favoring GPU ones."""
     available = get_available_encoders()
-    
-    # Priority list for H.264 encoders
-    priority = [
-        "h264_nvenc",  # NVIDIA
-        "h264_amf",    # AMD
-        "h264_qsv",    # Intel
-        "libx264",     # Software (Fallback)
-    ]
-    
-    for enc in priority:
+
+    for enc in _H264_ENCODER_PRIORITY:
         if enc in available:
             return enc
             
