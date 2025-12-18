@@ -4,6 +4,7 @@ import queue
 import threading
 import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 from .deps import requests
@@ -182,7 +183,7 @@ def download_all_memories(
     join_multi_snaps_enabled: bool = False,
     concurrent: bool = False,
     jobs: int = 5,
-    jobs_supplier: callable | None = None,
+    jobs_supplier: Callable[[], int] | None = None,
     limit: int | None = None,
     stop_event: threading.Event | None = None,
     progress_callback: callable = None,
@@ -416,12 +417,58 @@ def download_all_memories(
         print("\n" + "=" * 60)
         print(f"Processing {len(deferred_overlays)} deferred overlay merge(s)...")
         print("=" * 60)
+        if progress_callback:
+            progress_callback(
+                {
+                    "type": "progress",
+                    "phase": "merge",
+                    "completed": 0,
+                    "total": len(deferred_overlays),
+                    "message": "Merging overlays",
+                }
+            )
 
-        for i, (file_num, metadata, files_saved) in enumerate(deferred_overlays, start=1):
-            if stop_event and stop_event.is_set():
-                return
-            print(f"\n({i}/{len(deferred_overlays)}) Processing deferred merge #{metadata['number']}")
+        merge_jobs_default = max(1, min(int(jobs), 20))
+        max_merge_workers = 20 if jobs_supplier else merge_jobs_default
+        allowed_workers = {"value": merge_jobs_default}
+        allowed_lock = threading.Lock()
+        allowed_cv = threading.Condition(allowed_lock)
+        monitor_stop = threading.Event()
 
+        def read_job_limit() -> int:
+            value = merge_jobs_default
+            if jobs_supplier:
+                try:
+                    value = int(jobs_supplier())
+                except (TypeError, ValueError):
+                    value = merge_jobs_default
+            if value < 1:
+                value = 1
+            if value > 20:
+                value = 20
+            return value
+
+        def monitor_jobs() -> None:
+            last_value = None
+            while not monitor_stop.is_set():
+                current = read_job_limit()
+                if current != last_value:
+                    with allowed_cv:
+                        allowed_workers["value"] = current
+                        allowed_cv.notify_all()
+                    last_value = current
+                monitor_stop.wait(0.3)
+
+        if jobs_supplier:
+            threading.Thread(target=monitor_jobs, daemon=True).start()
+
+        merge_queue: queue.Queue[tuple[int, tuple[str, dict, list]] | None] = queue.Queue()
+        merge_counter = {"count": 0}
+        merge_counter_lock = threading.Lock()
+        dup_lock = threading.Lock()
+
+        def merge_one(item: tuple[str, dict, list]) -> None:
+            file_num, metadata, files_saved = item
             main_file = None
             overlay_file = None
             for file_info in files_saved:
@@ -431,63 +478,125 @@ def download_all_memories(
                 elif file_info["type"] == "overlay":
                     overlay_file = file_path
 
-            if main_file and overlay_file:
-                try:
-                    extension = main_file.suffix
-                    output_filename = generate_filename(
-                        metadata["date"], extension, use_timestamp_filenames, file_num
+            if not (main_file and overlay_file):
+                return
+
+            try:
+                extension = main_file.suffix
+                output_filename = generate_filename(
+                    metadata["date"], extension, use_timestamp_filenames, file_num
+                )
+                merged_file = output_path / output_filename
+
+                is_video = extension.lower() in [".mp4", ".mov", ".avi"]
+                if is_video:
+                    print("  Merging video overlay (this may take a while)...")
+                    success = merge_video_overlay(main_file, overlay_file, merged_file)
+                else:
+                    print("  Merging image overlay...")
+                    with open(main_file, "rb") as f:
+                        main_data = f.read()
+                    with open(overlay_file, "rb") as f:
+                        overlay_data = f.read()
+                    merged_data = merge_image_overlay(main_data, overlay_data)
+                    merged_data = add_exif_metadata(
+                        merged_data,
+                        metadata["date"],
+                        metadata["latitude"],
+                        metadata["longitude"],
                     )
-                    merged_file = output_path / output_filename
+                    with open(merged_file, "wb") as f:
+                        f.write(merged_data)
+                    success = merged_file.exists() and merged_file.stat().st_size > 0
 
-                    is_video = extension.lower() in [".mp4", ".mov", ".avi"]
-                    if is_video:
-                        print("  Merging video overlay (this may take a while)...")
-                        success = merge_video_overlay(main_file, overlay_file, merged_file)
-                    else:
-                        print("  Merging image overlay...")
-                        with open(main_file, "rb") as f:
-                            main_data = f.read()
-                        with open(overlay_file, "rb") as f:
-                            overlay_data = f.read()
-                        merged_data = merge_image_overlay(main_data, overlay_data)
-                        merged_data = add_exif_metadata(
-                            merged_data,
-                            metadata["date"],
-                            metadata["latitude"],
-                            metadata["longitude"],
-                        )
-                        with open(merged_file, "wb") as f:
-                            f.write(merged_data)
-                        success = merged_file.exists() and merged_file.stat().st_size > 0
+                if success:
+                    with metadata_lock:
+                        metadata["files"] = [
+                            {"path": output_filename, "size": merged_file.stat().st_size, "type": "merged"}
+                        ]
 
-                    if success:
-                        with metadata_lock:
-                            metadata["files"] = [
-                                {"path": output_filename, "size": merged_file.stat().st_size, "type": "merged"}
-                            ]
+                    timestamp = parse_date_to_timestamp(metadata["date"])
+                    if timestamp:
+                        set_file_timestamp(merged_file, timestamp)
 
-                        timestamp = parse_date_to_timestamp(metadata["date"])
-                        if timestamp:
-                            set_file_timestamp(merged_file, timestamp)
-
-                        if main_file.exists():
-                            if duplicate_index:
+                    if main_file.exists():
+                        if duplicate_index:
+                            with dup_lock:
                                 duplicate_index.unregister_file(main_file)
-                            main_file.unlink()
-                            print(f"  Deleted: {main_file.name}")
-                        if overlay_file.exists():
-                            if duplicate_index:
+                        main_file.unlink()
+                        print(f"  Deleted: {main_file.name}")
+                    if overlay_file.exists():
+                        if duplicate_index:
+                            with dup_lock:
                                 duplicate_index.unregister_file(overlay_file)
-                            overlay_file.unlink()
-                            print(f"  Deleted: {overlay_file.name}")
+                        overlay_file.unlink()
+                        print(f"  Deleted: {overlay_file.name}")
 
-                        print(f"  Success: {output_filename} ({merged_file.stat().st_size:,} bytes)")
+                    print(f"  Success: {output_filename} ({merged_file.stat().st_size:,} bytes)")
+                else:
+                    print("  ERROR: Overlay merge failed, keeping separate files")
+
+            except Exception as e:
+                print(f"  ERROR: {str(e)}")
+                print("  Keeping separate -main/-overlay files")
+
+        def worker(worker_id: int) -> None:
+            while True:
+                if stop_event and stop_event.is_set():
+                    pass
+                with allowed_cv:
+                    while worker_id > allowed_workers["value"]:
+                        if stop_event and stop_event.is_set():
+                            break
+                        allowed_cv.wait(timeout=0.5)
+                try:
+                    item = merge_queue.get(timeout=0.2)
+                except queue.Empty:
+                    if stop_event and stop_event.is_set():
+                        continue
                     else:
-                        print("  ERROR: Overlay merge failed, keeping separate files")
+                        continue
+                if item is None:
+                    merge_queue.task_done()
+                    break
+                idx, payload = item
+                print(f"\n({idx}/{len(deferred_overlays)}) Processing deferred merge #{payload[1]['number']}")
+                merge_one(payload)
+                with merge_counter_lock:
+                    merge_counter["count"] += 1
+                    completed = merge_counter["count"]
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "type": "progress",
+                            "phase": "merge",
+                            "completed": completed,
+                            "total": len(deferred_overlays),
+                            "message": f"Merging overlays ({completed}/{len(deferred_overlays)})",
+                        }
+                    )
+                merge_queue.task_done()
 
-                except Exception as e:
-                    print(f"  ERROR: {str(e)}")
-                    print("  Keeping separate -main/-overlay files")
+        threads = []
+        for worker_id in range(1, max_merge_workers + 1):
+            t = threading.Thread(target=worker, args=(worker_id,), daemon=True)
+            t.start()
+            threads.append(t)
+
+        for idx, item in enumerate(deferred_overlays, start=1):
+            if stop_event and stop_event.is_set():
+                break
+            merge_queue.put((idx, item))
+
+        for _ in threads:
+            merge_queue.put(None)
+
+        merge_queue.join()
+        monitor_stop.set()
+        with allowed_cv:
+            allowed_cv.notify_all()
+        for t in threads:
+            t.join(timeout=0.5)
 
         with metadata_lock:
             save_metadata(metadata_list, output_path)

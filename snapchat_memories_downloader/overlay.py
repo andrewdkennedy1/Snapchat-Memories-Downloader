@@ -60,10 +60,11 @@ def build_ffmpeg_overlay_command(
     *,
     copy_audio: bool,
     encoder: str | None = None,
+    use_hwaccel: bool = False,
 ) -> list[str]:
     overlay_is_image = overlay_path.suffix.lower() in _IMAGE_EXTS
     selected_encoder = encoder or deps.get_best_h264_encoder()
-    hwaccel_args = deps.get_hwaccel_args(selected_encoder)
+    hwaccel_args = deps.get_hwaccel_args(selected_encoder) if use_hwaccel else []
 
     cmd = [deps.ffmpeg_path or "ffmpeg", "-hide_banner", "-nostdin"]
     if hwaccel_args:
@@ -109,13 +110,13 @@ def build_ffmpeg_overlay_command(
 
 def _encoder_settings(encoder: str) -> list[str]:
     if "nvenc" in encoder:
-        return ["-rc", "vbr", "-cq", "23", "-preset", "p4"]
+        return ["-rc", "vbr", "-cq", "23", "-preset", "p3"]
     if "amf" in encoder:
         return ["-rc", "vbaq", "-quality", "balanced"]
     if "qsv" in encoder:
         return ["-global_quality", "23", "-preset", "balanced"]
     # Default libx264 settings
-    return ["-preset", "medium", "-crf", "23"]
+    return ["-preset", "veryfast", "-crf", "23"]
 
 
 def _audio_settings(copy_audio: bool) -> list[str]:
@@ -164,6 +165,7 @@ def merge_video_overlay(main_path: Path, overlay_path: Path, output_path: Path) 
                     output_path,
                     copy_audio=copy_audio,
                     encoder=encoder,
+                    use_hwaccel=False,
                 )
                 result = run_capture(cmd, timeout=600)
 

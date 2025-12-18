@@ -89,16 +89,9 @@ def build_config_section(gui) -> ft.Control:
     gui.timestamp_cb = ft.Checkbox(label="Timestamp-based filenames", value=True)
     gui.join_multi_cb = ft.Checkbox(label="Join multi-snaps (videos)", value=True)
 
-    gui.jobs_value_text = ft.Text("5", size=12, color=SC_YELLOW)
-    gui.jobs_slider = ft.Slider(
-        min=1,
-        max=20,
-        divisions=19,
-        value=5,
-        on_change=lambda _: gui._sync_option_states(),
-    )
-    gui.jobs_warning = ft.Text(
-        "Warning: higher values increase CPU usage.",
+    gui.auto_jobs_text = ft.Text("Auto jobs: --", size=12, color=SC_YELLOW)
+    gui.auto_jobs_hint = ft.Text(
+        "Adjusts automatically based on system load.",
         size=11,
         color=SC_YELLOW,
     )
@@ -112,15 +105,7 @@ def build_config_section(gui) -> ft.Control:
         [
             ft.Column([gui.merge_mode_text, gui.concurrent_cb], expand=True, spacing=6),
             ft.Column([gui.duplicates_cb, gui.timestamp_cb, gui.join_multi_cb], expand=True, spacing=6),
-            ft.Column(
-                [
-                    ft.Row([ft.Text("Jobs", size=12), gui.jobs_value_text], spacing=6),
-                    gui.jobs_slider,
-                    gui.jobs_warning,
-                ],
-                width=220,
-                spacing=6,
-            ),
+            ft.Column([gui.auto_jobs_text, gui.auto_jobs_hint], width=220, spacing=6),
         ],
         spacing=16,
         vertical_alignment=ft.CrossAxisAlignment.START,

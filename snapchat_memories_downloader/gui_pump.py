@@ -133,7 +133,11 @@ class UiEventPump:
                     completed = int(progress.get("completed", 0))
                     total = int(progress.get("total", 1)) or 1
                     self._progress_bar.value = completed / total
-                    self._status_text.value = f"Downloaded {completed} / {total}"
+                    phase = str(progress.get("phase", "")).lower()
+                    if phase == "merge":
+                        self._status_text.value = f"Merging overlays {completed} / {total}"
+                    else:
+                        self._status_text.value = f"Downloaded {completed} / {total}"
                     speed = str(progress.get("speed", ""))
                     eta = str(progress.get("eta", "")).strip()
                     total_size = str(progress.get("total_size", ""))
