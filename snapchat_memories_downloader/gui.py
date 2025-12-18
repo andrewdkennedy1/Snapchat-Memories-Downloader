@@ -1,26 +1,19 @@
 from __future__ import annotations
 
-import queue
 import threading
-import time
 from pathlib import Path
 
 import flet as ft
 
+from snapchat_memories_downloader.deps import ensure_ffmpeg
+from snapchat_memories_downloader.gui_layout import build_config_section, build_logs_section, build_setup_section
+from snapchat_memories_downloader.gui_pump import UiEventPump
+from snapchat_memories_downloader.gui_report import report_log_lines, show_report_dialog
+from snapchat_memories_downloader.gui_theme import SC_BLACK, SC_GREY, SC_WHITE, SC_YELLOW, icon
 from snapchat_memories_downloader.orchestrator import download_all_memories
 from snapchat_memories_downloader.parser import parse_html_file
 from snapchat_memories_downloader.process_lifecycle import enable_kill_children_on_exit, shutdown_now
-
-# Snapchat-ish colors (dark UI)
-SC_YELLOW = "#FFFC00"
-SC_BLACK = "#000000"
-SC_GREY = "#1D1D1D"
-SC_WHITE = "#FFFFFF"
-
-
-def _icon(name: str, fallback_name: str = "CIRCLE") -> ft.IconData:
-    fallback = getattr(ft.Icons, fallback_name, None)
-    return getattr(ft.Icons, name, fallback)
+from snapchat_memories_downloader.shell_open import open_path
 
 
 class SnapchatGui:
@@ -28,13 +21,21 @@ class SnapchatGui:
         enable_kill_children_on_exit()
         self.page = page
         self.stop_event = threading.Event()
-        self._log_queue: queue.Queue[str] = queue.Queue(maxsize=5000)
-        self._pump_stop = threading.Event()
-        self._latest_progress: dict | None = None
-        self._progress_lock = threading.Lock()
+        self.pump: UiEventPump | None = None
+        self._last_report_file: Path | None = None
         self._setup_page()
         self._build_ui()
+        self.pump = UiEventPump(
+            run_in_ui=self._run_in_ui,
+            safe_update=self._safe_update,
+            log_list=self.log_list,
+            progress_bar=self.progress_bar,
+            status_text=self.status_text,
+            speed_text=self.speed_text,
+            log_color=SC_WHITE,
+        )
         self._sync_option_states()
+        self._start_ffmpeg_preflight()
 
     def _setup_page(self) -> None:
         self.page.title = "Snapchat Memories Downloader"
@@ -66,17 +67,18 @@ class SnapchatGui:
     def _force_shutdown(self) -> None:
         try:
             self.stop_event.set()
-            self._pump_stop.set()
+            if self.pump:
+                self.pump.stop()
         except Exception:
             pass
         shutdown_now(0)
 
     def _build_ui(self) -> None:
         header = self._build_header()
-        setup_section = self._build_setup_section()
-        config_section = self._build_config_section()
+        setup_section = build_setup_section(self)
+        config_section = build_config_section(self)
         action_section = self._build_action_section()
-        logs_section = self._build_logs_section()
+        logs_section = build_logs_section(self)
 
         content = ft.Column(
             [
@@ -98,8 +100,19 @@ class SnapchatGui:
         self.dir_picker = ft.FilePicker(on_result=self._on_dir_result)
         self.page.overlay.extend([self.file_picker, self.dir_picker])
 
+    def _start_ffmpeg_preflight(self) -> None:
+        threading.Thread(target=self._run_ffmpeg_preflight, daemon=True).start()
+
+    def _run_ffmpeg_preflight(self) -> None:
+        def ui_log(message: str) -> None:
+            self._run_in_ui(lambda: self._append_log_line(message))
+
+        ui_log("FFmpeg: checking...")
+        ok = ensure_ffmpeg(interactive=False, log=ui_log)
+        ui_log("FFmpeg: ready" if ok else "FFmpeg: not available (video merges/join disabled)")
+
     def _build_header(self) -> ft.Control:
-        app_icon = _icon("PHOTO_CAMERA", "CAMERA_ALT") or _icon("CAMERA", "IMAGE") or _icon("IMAGE", "CIRCLE")
+        app_icon = icon("PHOTO_CAMERA", "CAMERA_ALT") or icon("CAMERA", "IMAGE") or icon("IMAGE", "CIRCLE")
         return ft.Row(
             [
                 ft.Icon(app_icon, color=SC_YELLOW, size=38),
@@ -129,114 +142,6 @@ class SnapchatGui:
             border_radius=12,
         )
 
-    def _build_setup_section(self) -> ft.Control:
-        self.html_input = ft.TextField(
-            label="Snapchat HTML File (memories_history.html)",
-            value="html/memories_history.html",
-            expand=True,
-            border_color=SC_YELLOW,
-        )
-        self.output_input = ft.TextField(
-            label="Output Directory",
-            value="memories",
-            expand=True,
-            border_color=SC_YELLOW,
-        )
-
-        html_row = ft.Row(
-            [
-                self.html_input,
-                ft.IconButton(
-                    icon=_icon("FILE_OPEN", "UPLOAD_FILE") or _icon("UPLOAD_FILE", "INSERT_DRIVE_FILE") or _icon("INSERT_DRIVE_FILE", "CIRCLE"),
-                    on_click=self._pick_html,
-                    icon_color=SC_YELLOW,
-                    tooltip="Choose memories_history.html",
-                ),
-            ]
-        )
-        self.html_summary_text = ft.Text("", size=12, color=SC_YELLOW)
-        out_row = ft.Row(
-            [
-                self.output_input,
-                ft.IconButton(
-                    icon=_icon("FOLDER_OPEN", "FOLDER") or _icon("FOLDER", "CIRCLE"),
-                    on_click=self._pick_dir,
-                    icon_color=SC_YELLOW,
-                    tooltip="Choose output folder",
-                ),
-            ]
-        )
-
-        return self._section(
-            "1. Setup",
-            _icon("SETTINGS", "TUNE") or _icon("TUNE", "CIRCLE"),
-            ft.Column([html_row, self.html_summary_text, out_row], spacing=12),
-        )
-
-    def _build_config_section(self) -> ft.Control:
-        self.mode_dropdown = ft.Dropdown(
-            label="Run Mode",
-            options=[
-                ft.dropdown.Option("download", "Download All"),
-                ft.dropdown.Option("resume", "Resume Incomplete"),
-                ft.dropdown.Option("retry-failed", "Retry Failed"),
-                ft.dropdown.Option("test", "Test (3 items)"),
-            ],
-            value="download",
-            expand=True,
-            on_change=lambda _: self._sync_option_states(),
-        )
-        self.media_dropdown = ft.Dropdown(
-            label="Media Filter",
-            options=[
-                ft.dropdown.Option("all", "All Media"),
-                ft.dropdown.Option("videos", "Videos Only"),
-                ft.dropdown.Option("pictures", "Pictures Only"),
-                ft.dropdown.Option("overlays", "Overlays Only"),
-            ],
-            value="all",
-            expand=True,
-        )
-
-        self.merge_cb = ft.Checkbox(label="Merge overlays (when possible)", value=True, on_change=lambda _: self._sync_option_states())
-        self.defer_cb = ft.Checkbox(label="Defer video merges (batch at end)", value=False)
-        self.concurrent_cb = ft.Checkbox(label="Concurrent download", value=True, on_change=lambda _: self._sync_option_states())
-        self.duplicates_cb = ft.Checkbox(label="Remove duplicates during download", value=True)
-        self.timestamp_cb = ft.Checkbox(label="Timestamp-based filenames", value=True)
-        self.join_multi_cb = ft.Checkbox(label="Join multi-snaps (videos)", value=True)
-
-        self.jobs_count = ft.TextField(
-            label="Jobs",
-            value="5",
-            width=120,
-            border_color=SC_YELLOW,
-            hint_text="e.g. 5",
-        )
-
-        options = ft.Row(
-            [
-                ft.Column([self.merge_cb, self.defer_cb, self.concurrent_cb], expand=True, spacing=6),
-                ft.Column([self.duplicates_cb, self.timestamp_cb, self.join_multi_cb], expand=True, spacing=6),
-                ft.Column([self.jobs_count], width=140),
-            ],
-            spacing=16,
-            vertical_alignment=ft.CrossAxisAlignment.START,
-        )
-
-        body = ft.Column(
-            [
-                ft.Row([self.mode_dropdown, self.media_dropdown], spacing=12),
-                options,
-            ],
-            spacing=12,
-        )
-
-        return self._section(
-            "2. Configuration",
-            _icon("TUNE", "SETTINGS") or _icon("SETTINGS", "CIRCLE"),
-            body,
-        )
-
     def _build_action_section(self) -> ft.Control:
         self.start_btn = ft.ElevatedButton(
             text="Start",
@@ -249,13 +154,33 @@ class SnapchatGui:
             height=46,
         )
 
+        self.open_output_btn = ft.OutlinedButton(
+            text="Open output folder",
+            icon=icon("FOLDER_OPEN", "FOLDER") or icon("FOLDER", "CIRCLE"),
+            on_click=lambda _: self._open_output_folder(),
+        )
+        self.open_report_btn = ft.OutlinedButton(
+            text="Open report",
+            icon=icon("DESCRIPTION", "ARTICLE") or icon("ARTICLE", "CIRCLE"),
+            on_click=lambda _: self._open_report_file(),
+            disabled=True,
+        )
+
         self.progress_bar = ft.ProgressBar(value=0, color=SC_YELLOW, visible=False)
         self.status_text = ft.Text("Ready", size=13, color=SC_WHITE, visible=False)
         self.speed_text = ft.Text("", size=13, color=SC_YELLOW, visible=False)
 
         body = ft.Column(
             [
-                ft.Row([ft.Container(content=self.start_btn, expand=True)]),
+                ft.Row(
+                    [
+                        ft.Container(content=self.start_btn, expand=True),
+                        self.open_output_btn,
+                        self.open_report_btn,
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
                 self.progress_bar,
                 ft.Row([self.status_text, ft.Container(expand=True), self.speed_text]),
             ],
@@ -264,36 +189,7 @@ class SnapchatGui:
 
         return self._section(
             "3. Run",
-            _icon("PLAY_ARROW", "ROCKET_LAUNCH") or _icon("ROCKET_LAUNCH", "CIRCLE"),
-            body,
-        )
-
-    def _build_logs_section(self) -> ft.Control:
-        self.log_list = ft.ListView(expand=True, spacing=2, auto_scroll=True)
-        self.clear_btn = ft.OutlinedButton(
-            text="Clear logs",
-            on_click=lambda _: self._clear_logs(),
-            icon=_icon("DELETE_OUTLINE", "DELETE") or _icon("DELETE", "CIRCLE"),
-        )
-
-        body = ft.Column(
-            [
-                ft.Row([ft.Container(expand=True), self.clear_btn]),
-                ft.Container(
-                    content=self.log_list,
-                    height=100,
-                    padding=12,
-                    bgcolor=SC_BLACK,
-                    border_radius=10,
-                ),
-            ],
-            spacing=10,
-            expand=True,
-        )
-
-        return self._section(
-            "Logs",
-            _icon("TERMINAL", "CODE") or _icon("CODE", "CIRCLE"),
+            icon("PLAY_ARROW", "ROCKET_LAUNCH") or icon("ROCKET_LAUNCH", "CIRCLE"),
             body,
         )
 
@@ -347,17 +243,27 @@ class SnapchatGui:
             self.output_input.value = e.path
             self._safe_update()
 
+    def _open_output_folder(self) -> None:
+        try:
+            open_path(Path(self.output_input.value))
+        except Exception as exc:
+            self._append_log_line(f"Error opening output folder: {exc}")
+
+    def _open_report_file(self) -> None:
+        if not self._last_report_file:
+            return
+        try:
+            open_path(self._last_report_file)
+        except Exception as exc:
+            self._append_log_line(f"Error opening report file: {exc}")
+
     def _clear_logs(self) -> None:
-        self.log_list.controls.clear()
-        self._safe_update()
+        if self.pump:
+            self.pump.clear_logs()
 
     def _append_log_line(self, text: str, *, update: bool = True) -> None:
-        self.log_list.controls.append(ft.Text(text, size=12, color=SC_WHITE, font_family="monospace"))
-        max_lines = 2000
-        if len(self.log_list.controls) > max_lines:
-            del self.log_list.controls[: len(self.log_list.controls) - max_lines]
-        if update:
-            self._safe_update()
+        if self.pump:
+            self.pump.append_log_line(text, update=update)
 
     def _safe_update(self) -> None:
         try:
@@ -372,63 +278,6 @@ class SnapchatGui:
                 method(fn)
                 return
         fn()
-
-    def _progress_callback(self, data: dict) -> None:
-        data_type = data.get("type")
-        if data_type == "progress":
-            with self._progress_lock:
-                self._latest_progress = dict(data)
-            return
-
-        if data_type == "log":
-            msg = str(data.get("message", ""))
-            if not msg:
-                return
-            try:
-                self._log_queue.put_nowait(msg)
-            except queue.Full:
-                return
-
-    def _pump_ui_events(self) -> None:
-        last_flush = 0.0
-        pending_logs: list[str] = []
-
-        while not self._pump_stop.is_set() or not self._log_queue.empty():
-            try:
-                line = self._log_queue.get(timeout=0.1)
-                pending_logs.append(line)
-            except queue.Empty:
-                pass
-
-            now = time.monotonic()
-            should_flush = (now - last_flush) >= 0.15 or len(pending_logs) >= 100
-            if not should_flush:
-                continue
-
-            with self._progress_lock:
-                progress = self._latest_progress
-
-            logs_to_apply = pending_logs[:200]
-            pending_logs = pending_logs[200:]
-            last_flush = now
-
-            def apply() -> None:
-                for ln in logs_to_apply:
-                    self._append_log_line(ln, update=False)
-
-                if progress and progress.get("type") == "progress":
-                    completed = int(progress.get("completed", 0))
-                    total = int(progress.get("total", 1)) or 1
-                    self.progress_bar.value = completed / total
-                    self.status_text.value = f"Downloaded {completed} / {total}"
-                    speed = str(progress.get("speed", ""))
-                    total_size = str(progress.get("total_size", ""))
-                    suffix = f" (Total: {total_size})" if total_size else ""
-                    self.speed_text.value = f"{speed}{suffix}".strip()
-
-                self._safe_update()
-
-            self._run_in_ui(apply)
 
     def _validate_inputs(self) -> tuple[bool, str]:
         html_path = Path(self.html_input.value).expanduser()
@@ -456,6 +305,10 @@ class SnapchatGui:
     def _start_download(self, _) -> None:
         ok, error = self._validate_inputs()
         self._clear_logs()
+        if self.pump:
+            self.pump.reset()
+        self._last_report_file = None
+        self.open_report_btn.disabled = True
         if not ok:
             self._append_log_line(f"Error: {error}")
             return
@@ -474,9 +327,9 @@ class SnapchatGui:
             jobs = int(jobs_value)
 
         self.stop_event.clear()
-        self._pump_stop.clear()
         self._set_running(True)
-        threading.Thread(target=self._pump_ui_events, daemon=True).start()
+        if self.pump:
+            self.pump.start()
 
         params = {
             "html_path": self.html_input.value,
@@ -495,7 +348,7 @@ class SnapchatGui:
             "jobs": jobs,
             "limit": 3 if is_test else None,
             "stop_event": self.stop_event,
-            "progress_callback": self._progress_callback,
+            "progress_callback": self.pump.progress_callback if self.pump else None,
             "show_report": True,
         }
 
@@ -508,8 +361,43 @@ class SnapchatGui:
         except Exception as exc:
             self._run_in_ui(lambda: self._append_log_line(f"CRITICAL ERROR: {exc}"))
         finally:
-            self._pump_stop.set()
-            self._run_in_ui(lambda: self._set_running(False))
+            if self.pump:
+                self.pump.stop()
+            self._run_in_ui(self._finalize_run)
+
+    def _finalize_run(self) -> None:
+        self._set_running(False)
+        report_event = self.pump.take_report_event() if self.pump else None
+        if not report_event:
+            self._safe_update()
+            return
+
+        report = report_event.get("report")
+        report_file_raw = report_event.get("report_file")
+        output_dir_raw = report_event.get("output_dir")
+
+        report_file = Path(report_file_raw) if report_file_raw else None
+        output_dir = Path(output_dir_raw) if output_dir_raw else None
+
+        if report_file:
+            self._last_report_file = report_file
+            self.open_report_btn.disabled = False
+
+        if isinstance(report, dict):
+            for line in report_log_lines(report, report_file):
+                self._append_log_line(line, update=False)
+            show_report_dialog(
+                page=self.page,
+                report=report,
+                report_file=report_file,
+                output_dir=output_dir,
+                accent_color=SC_YELLOW,
+                open_path=open_path,
+                on_error=lambda msg: self._append_log_line(msg),
+                safe_update=self._safe_update,
+            )
+
+        self._safe_update()
 
 
 def main(page: ft.Page) -> None:

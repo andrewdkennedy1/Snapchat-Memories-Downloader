@@ -3,25 +3,71 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .deps import ffmpeg_available, ffmpeg_path
+from . import deps
 from .subprocess_utils import run_capture
 
 
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi"}
+
+
+def _is_video_file(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in _VIDEO_EXTENSIONS
+
+
+def _is_overlay_video(path: Path) -> bool:
+    return path.stem.lower().endswith("-overlay")
+
+
+def _is_joined_video(path: Path) -> bool:
+    return path.stem.lower().endswith("-joined")
+
+
+def _is_main_video(path: Path) -> bool:
+    return path.stem.lower().endswith("-main")
+
+
+def _join_output_path(first_video: Path) -> Path:
+    stem = first_video.stem
+    if stem.lower().endswith("-main"):
+        stem = stem[: -len("-main")]
+    return first_video.with_name(f"{stem}-joined{first_video.suffix}")
+
+
+def _overlay_files_for_main_video(main_video: Path) -> list[Path]:
+    if not _is_main_video(main_video):
+        return []
+    base = main_video.stem[: -len("-main")]
+    return sorted(main_video.parent.glob(f"{base}-overlay.*"))
+
+
+def _safe_unlink(path: Path) -> bool:
+    try:
+        path.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
 def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dict:
-    if not ffmpeg_available:
+    if not deps.ffmpeg_available:
         print("\nWarning: FFmpeg not available, cannot join multi-snaps")
-        return {"groups_found": 0, "videos_joined": 0, "files_deleted": 0}
+        return {"groups_found": 0, "videos_joined": 0, "files_deleted": 0, "overlays_deleted": 0}
 
     print("\n" + "=" * 60)
     print("Detecting multi-snap videos...")
     print("=" * 60)
 
-    video_extensions = [".mp4", ".mov", ".avi"]
-    all_videos = [f for f in folder_path.iterdir() if f.is_file() and f.suffix.lower() in video_extensions]
+    all_videos = [
+        path
+        for path in folder_path.iterdir()
+        if _is_video_file(path) and not _is_overlay_video(path) and not _is_joined_video(path)
+    ]
 
     if len(all_videos) < 2:
         print("Not enough videos to check for multi-snaps")
-        return {"groups_found": 0, "videos_joined": 0, "files_deleted": 0}
+        return {"groups_found": 0, "videos_joined": 0, "files_deleted": 0, "overlays_deleted": 0}
 
     video_info = [{"path": video_path, "mtime": video_path.stat().st_mtime} for video_path in all_videos]
     video_info.sort(key=lambda x: x["mtime"])
@@ -41,12 +87,13 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
 
     if not groups:
         print("No multi-snap video groups found")
-        return {"groups_found": 0, "videos_joined": 0, "files_deleted": 0}
+        return {"groups_found": 0, "videos_joined": 0, "files_deleted": 0, "overlays_deleted": 0}
 
     print(f"\nFound {len(groups)} multi-snap group(s):")
 
     total_videos_joined = 0
     files_deleted = 0
+    overlays_deleted = 0
 
     for group_idx, group in enumerate(groups, start=1):
         print(f"\n  Group {group_idx} ({len(group)} videos):")
@@ -54,8 +101,8 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
             print(f"    - {video['path'].name}")
 
         first_video = group[0]["path"]
-        output_name = first_video.stem + "-joined" + first_video.suffix
-        output_path = folder_path / output_name
+        output_path = _join_output_path(first_video)
+        output_name = output_path.name
 
         concat_list_path = folder_path / f"concat_list_{group_idx}.txt"
         try:
@@ -65,7 +112,7 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
                     f.write(f"file '{escaped_path}'\n")
 
             cmd = [
-                ffmpeg_path or "ffmpeg",
+                deps.ffmpeg_path or "ffmpeg",
                 "-f",
                 "concat",
                 "-safe",
@@ -86,8 +133,12 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
                 os.utime(output_path, (first_stat.st_atime, first_stat.st_mtime))
 
                 for video in group:
-                    video["path"].unlink()
-                    files_deleted += 1
+                    if _safe_unlink(video["path"]):
+                        files_deleted += 1
+
+                    for overlay_path in _overlay_files_for_main_video(video["path"]):
+                        if _safe_unlink(overlay_path):
+                            overlays_deleted += 1
 
                 total_videos_joined += len(group)
             else:
@@ -106,6 +157,13 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
     print(f"  Groups found: {len(groups)}")
     print(f"  Videos joined: {total_videos_joined}")
     print(f"  Files deleted: {files_deleted}")
+    if overlays_deleted:
+        print(f"  Overlays deleted: {overlays_deleted}")
     print("=" * 60)
 
-    return {"groups_found": len(groups), "videos_joined": total_videos_joined, "files_deleted": files_deleted}
+    return {
+        "groups_found": len(groups),
+        "videos_joined": total_videos_joined,
+        "files_deleted": files_deleted,
+        "overlays_deleted": overlays_deleted,
+    }

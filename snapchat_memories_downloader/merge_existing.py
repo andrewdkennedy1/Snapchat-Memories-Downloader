@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .deps import Image, ffmpeg_available
+from . import deps
 from .overlay import merge_image_overlay, merge_video_overlay
 
 
@@ -63,7 +63,7 @@ def merge_existing_files(folder_path: str) -> None:
             ]
 
             if is_video:
-                if not ffmpeg_available:
+                if not deps.ffmpeg_available:
                     print("  ERROR: FFmpeg not available for video merging")
                     error_count += 1
                     continue
@@ -80,7 +80,7 @@ def merge_existing_files(folder_path: str) -> None:
                     error_count += 1
 
             elif is_image:
-                if Image is None:
+                if deps.Image is None:
                     print("  ERROR: Pillow not available for image merging")
                     error_count += 1
                     continue
@@ -110,4 +110,3 @@ def merge_existing_files(folder_path: str) -> None:
     print("Merge complete!")
     print(f"Summary: {merged_count} merged, {skipped_count} skipped, {error_count} errors")
     print("\nNote: Original -main and -overlay files were NOT deleted")
-

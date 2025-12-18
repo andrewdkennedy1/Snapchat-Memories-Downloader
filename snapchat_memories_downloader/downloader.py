@@ -4,7 +4,7 @@ import io
 import zipfile
 from pathlib import Path
 
-from .deps import Image, ffmpeg_available, requests
+from . import deps
 from .duplicates import is_duplicate_file
 from .exif_utils import add_exif_metadata
 from .files import generate_filename, parse_date_to_timestamp, set_file_timestamp
@@ -34,7 +34,7 @@ def download_and_extract(
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     }
 
-    response = requests.get(url, headers=headers, timeout=30)
+    response = deps.requests.get(url, headers=headers, timeout=30)
     response.raise_for_status()
 
     content = response.content
@@ -82,7 +82,7 @@ def download_and_extract(
             merge_attempted = False
 
             if merge_overlays and has_overlay and main_file and overlay_file:
-                if is_image and Image is not None:
+                if is_image and deps.Image is not None:
                     try:
                         merged_data = merge_image_overlay(main_file, overlay_file)
                         merged_data = add_exif_metadata(
@@ -123,7 +123,7 @@ def download_and_extract(
                         print("    Saving separate files instead...")
                         merge_overlays = False
 
-                elif is_video and ffmpeg_available and not defer_video_overlays:
+                elif is_video and deps.ffmpeg_available and not defer_video_overlays:
                     try:
                         main_ext = extracted_files.get("main", {}).get("ext") or extension
                         overlay_ext = extracted_files.get("overlay", {}).get("ext") or ".png"

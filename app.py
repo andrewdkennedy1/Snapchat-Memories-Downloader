@@ -56,9 +56,6 @@ def _build_gooey_decorator():
 
 @_build_gooey_decorator()
 def main():
-    # Preflight check for FFmpeg (Windows only, auto-downloads if missing)
-    ensure_ffmpeg()
-
     # If Flet is installed and no args provided, launch Flet GUI
     if _HAS_FLET and len(sys.argv) == 1:
         from snapchat_memories_downloader.process_lifecycle import enable_kill_children_on_exit
@@ -66,6 +63,9 @@ def main():
         enable_kill_children_on_exit()
         ft.app(target=flet_main)
         return
+
+    # Preflight check for FFmpeg (Windows only, auto-downloads if missing)
+    ensure_ffmpeg()
 
     parser: argparse.ArgumentParser
     if _HAS_GOOEY:

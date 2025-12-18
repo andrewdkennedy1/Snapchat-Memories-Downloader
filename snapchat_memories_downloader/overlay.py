@@ -4,7 +4,7 @@ import io
 import subprocess
 from pathlib import Path
 
-from .deps import Image, ffmpeg_available, ffmpeg_path
+from . import deps
 from .subprocess_utils import run_capture
 
 
@@ -12,11 +12,11 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"
 
 
 def merge_image_overlay(main_data: bytes, overlay_data: bytes) -> bytes:
-    if Image is None:
+    if deps.Image is None:
         raise ImportError("Pillow is required for overlay merging")
 
-    main_img = Image.open(io.BytesIO(main_data))
-    overlay_img = Image.open(io.BytesIO(overlay_data))
+    main_img = deps.Image.open(io.BytesIO(main_data))
+    overlay_img = deps.Image.open(io.BytesIO(overlay_data))
 
     original_format = main_img.format or "JPEG"
 
@@ -27,7 +27,7 @@ def merge_image_overlay(main_data: bytes, overlay_data: bytes) -> bytes:
         main_img = main_img.convert("RGB")
 
     if overlay_img.size != main_img.size:
-        overlay_img = overlay_img.resize(main_img.size, Image.Resampling.LANCZOS)
+        overlay_img = overlay_img.resize(main_img.size, deps.Image.Resampling.LANCZOS)
 
     main_img.paste(overlay_img, (0, 0), overlay_img)
 
@@ -62,7 +62,7 @@ def build_ffmpeg_overlay_command(
 ) -> list[str]:
     overlay_is_image = overlay_path.suffix.lower() in _IMAGE_EXTS
 
-    cmd = [ffmpeg_path or "ffmpeg", "-hide_banner"]
+    cmd = [deps.ffmpeg_path or "ffmpeg", "-hide_banner"]
     cmd += ["-y", "-i", str(main_path)]
     if overlay_is_image:
         cmd += ["-loop", "1", "-i", str(overlay_path)]
@@ -128,7 +128,7 @@ def _summarize_ffmpeg_stderr(stderr_text: str) -> str:
 
 
 def merge_video_overlay(main_path: Path, overlay_path: Path, output_path: Path) -> bool:
-    if not ffmpeg_available:
+    if not deps.ffmpeg_available:
         raise RuntimeError("FFmpeg is not available")
 
     try:

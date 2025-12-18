@@ -410,9 +410,22 @@ def download_all_memories(
     
     # Show report summary in console
     print_report_summary(report)
+
+    if progress_callback:
+        try:
+            progress_callback(
+                {
+                    "type": "report",
+                    "report": report,
+                    "report_file": str(report_file),
+                    "output_dir": str(output_path.absolute()),
+                }
+            )
+        except Exception:
+            pass
     
     # Show GUI popup if requested and not stopped
-    if show_report and not (stop_event and stop_event.is_set()):
+    if show_report and progress_callback is None and not (stop_event and stop_event.is_set()):
         show_report_popup(report, report_file)
     
     # Legacy command suggestions
