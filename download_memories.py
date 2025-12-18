@@ -850,7 +850,7 @@ def generate_filename(date_str: str, extension: str, use_timestamp: bool = False
             parts = date_str_clean.split(' ')
             if len(parts) == 2:
                 date_part = parts[0].replace('-', '.')  # "2025.11.30"
-                time_part = parts[1]  # "00:31:09"
+                time_part = parts[1].replace(':', '.')  # "00.31.09" (Fix for Windows: colons are invalid in filenames)
                 filename = f"{date_part}-{time_part}{extension}"
                 return filename
             else:
@@ -1335,7 +1335,7 @@ def download_all_memories(
     overlays_only: bool = False,
     use_timestamp_filenames: bool = False,
     remove_duplicates: bool = False,
-    join_multi_snaps: bool = False
+    join_multi_snaps_enabled: bool = False
 ) -> None:
     """Download all memories with sequential naming and metadata preservation.
 
@@ -1392,8 +1392,7 @@ def download_all_memories(
         print(f"\nDownloading {len(items_to_download)} memories to {output_dir}/")
 
     if not items_to_download:
-        print("No items to download!")
-        return
+        print("All selected memories already downloaded.")
 
     print("=" * 60)
 
@@ -1550,7 +1549,7 @@ def download_all_memories(
     # This prevents re-downloading and saves bandwidth/disk space immediately
 
     # Join multi-snaps if requested
-    if join_multi_snaps:
+    if join_multi_snaps_enabled:
         join_multi_snaps(output_path)
 
     # Summary
@@ -1777,5 +1776,5 @@ if __name__ == '__main__':
             overlays_only=overlays_only_mode,
             use_timestamp_filenames=timestamp_filenames_mode,
             remove_duplicates=remove_duplicates_mode,
-            join_multi_snaps=join_multi_snaps_mode
+            join_multi_snaps_enabled=join_multi_snaps_mode
         )
