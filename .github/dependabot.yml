@@ -14,20 +14,6 @@ updates:
       prefix: "pip"
       include: "scope"
 
-  # Update Node.js dependencies (ffmpeg)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "npm"
-    commit-message:
-      prefix: "npm"
-      include: "scope"
-
   # Update GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

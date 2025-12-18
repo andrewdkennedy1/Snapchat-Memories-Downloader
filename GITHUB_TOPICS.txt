@@ -14,14 +14,11 @@ photo-backup
 video-backup
 metadata-preservation
 gps-metadata
-client-side
-browser-based
 privacy-focused
 no-upload
 offline-processing
 open-source
 python
-javascript
 data-liberation
 snapchat-data
 snapchat-storage

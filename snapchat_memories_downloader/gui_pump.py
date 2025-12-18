@@ -135,11 +135,16 @@ class UiEventPump:
                     self._progress_bar.value = completed / total
                     self._status_text.value = f"Downloaded {completed} / {total}"
                     speed = str(progress.get("speed", ""))
+                    eta = str(progress.get("eta", "")).strip()
                     total_size = str(progress.get("total_size", ""))
-                    suffix = f" (Total: {total_size})" if total_size else ""
+                    parts = []
+                    if eta:
+                        parts.append(f"ETA: {eta}")
+                    if total_size:
+                        parts.append(f"Total: {total_size}")
+                    suffix = f" ({', '.join(parts)})" if parts else ""
                     self._speed_text.value = f"{speed}{suffix}".strip()
 
                 self._safe_update()
 
             self._run_in_ui(apply)
-

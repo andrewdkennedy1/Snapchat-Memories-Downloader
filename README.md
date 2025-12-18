@@ -6,12 +6,8 @@ Download ALL your Snapchat memories completely FREE - don't pay for paid
 services. This tool runs entirely on your computer, preserving all metadata
 (dates, GPS locations) while keeping your data 100% private.
 
-**Two ways to use:**
-
-1. **🌐 [Web Version](https://andrefecto.github.io/Snapchat-Memories-Downloader/)**
-   - Upload your HTML file in browser (100% private, client-side)
-2. **🐍 Python Script** - Command-line tool for local processing
-   (instructions below)
+**Python GUI/CLI only:** Run the local Python app for full features and privacy.
+Setup and usage are below.
 
 ## 📥 Getting Your Snapchat Data
 
@@ -48,7 +44,7 @@ but are now separate options at the bottom of the list.
 ### 🔒 Privacy & Security
 
 - **No Upload Required** - Your data never leaves your computer
-- **Runs Locally** - Everything processes in your browser or on your machine
+- **Runs Locally** - Everything processes on your machine
 - **No Account Needed** - No signup, no email, no tracking
 - **Safer Than Paid Services** - Don't trust your memories to third-party servers
 
@@ -61,7 +57,7 @@ but are now separate options at the bottom of the list.
 - **Embeds EXIF metadata into images** - GPS coordinates and dates show up in Photos apps
 - **Sets file timestamps to match original capture date**
 - Handles ZIP files with overlays (extracts to `-main` and `-overlay` files)
-- **Optional overlay merging** - Combine overlay on top of main content (images and videos)
+- **Overlay merging** - Combine overlay on top of main content (images and videos)
   - Images: Fast, instant processing (supports JPG, PNG, WebP, GIF, BMP, TIFF)
   - Videos: Requires FFmpeg, may take 1-5 minutes per video
 - **Merge existing files** - Retroactively merge already-downloaded `-main`/`-overlay` files without re-downloading
@@ -70,39 +66,6 @@ but are now separate options at the bottom of the list.
 - Saves complete `metadata.json` with all information
 - **Resume/Retry support** - Pick up where you left off or retry failed downloads
 - Incremental metadata updates - Track download progress in real-time
-
----
-
-## 🌐 Web Version (Easiest)
-
-Visit the [web version](https://andrefecto.github.io/Snapchat-Memories-Downloader/)
-and upload your `memories_history.html` file. Everything runs in your browser -
-your data never leaves your device!
-
-### Options
-
-- **Merge overlays**: Combine overlay content with main files (images and videos)
-  - Images: Fast processing in browser
-  - Videos: Uses FFmpeg.wasm (slower, may take 1-5 minutes per video)
-- **Videos only**: Only download and process videos (useful for re-processing with overlay merging)
-- **Pictures only**: Only download and process pictures (useful for re-processing with overlay merging)
-- **Batch size**: Choose how many files per ZIP (50, 100, 200, or all in one)
-  - Batching helps with large collections and allows easier recovery if interrupted
-  - Each batch is downloaded as a separate ZIP: `snapchat-memories-batch-1.zip`, `snapchat-memories-batch-2.zip`, etc.
-
-### Resume/Retry
-
-If your download gets interrupted or has failures:
-
-1. Extract the `metadata.json` file from any downloaded batch ZIP
-2. Go back to the web version
-3. Upload both `memories_history.html` AND `metadata.json`
-4. It will skip already-downloaded files and retry failed ones
-
-**Note:** The web version sets timestamps within the ZIP file and embeds EXIF metadata into images
-(GPS and capture dates). When you extract the files, most modern extraction tools will preserve these timestamps.
-
----
 
 ## 🐍 Python Script
 
@@ -370,8 +333,6 @@ For merged overlays (when using `--merge-overlays` flag):
 
 ```text
 .
-├── docs/
-│   └── index.html               # Web version (GitHub Pages)
 ├── html/
 │   └── memories_history.html    # Snapchat export HTML file (not included)
 ├── memories/                     # Downloaded files (default output directory, created by script)
@@ -412,13 +373,6 @@ For merged overlays (when using `--merge-overlays` flag):
 The metadata.json is saved after EACH download, so you can safely interrupt
 and resume at any time!
 
-### Web Version
-
-1. Upload `memories_history.html` to start
-2. Download includes `metadata.json` with status tracking
-3. To resume: Upload both HTML and `metadata.json`
-4. Skips successful downloads, retries pending/failed ones
-
 ## Notes
 
 - Downloads may take a while depending on file sizes and internet speed
@@ -432,8 +386,6 @@ and resume at any time!
 
 ## 🔐 How Your Data Stays Private
 
-- **Web Version**: All processing happens in your browser. No data is sent to
-  any server.
 - **Python Script**: Everything runs locally on your computer. No network
   requests except to Snapchat's download URLs.
 - Your memories are downloaded directly from Snapchat's servers using the URLs
@@ -496,10 +448,6 @@ If video overlay merging fails with `Conversion failed!`:
 - Make sure your FFmpeg build includes the `libx264` video encoder.
 - Some videos may have audio codecs that can’t be stream-copied into MP4; the downloader will retry by re-encoding audio to AAC.
 - If it still fails, the tool will keep the separate `-main`/`-overlay` files so you can merge later.
-
-### Web Version: FFmpeg.wasm CORS Error
-
-If you see security/CORS errors in the browser console related to FFmpeg, this has been fixed in the latest version. Hard refresh the page: `Ctrl+Shift+R` (Windows/Linux) or `Cmd+Shift+R` (Mac).
 
 ## 📄 License
 

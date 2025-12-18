@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .deps import requests
 from .downloader import download_and_extract
+from .duplicates import DuplicateIndex
 from .files import (
     generate_filename,
     get_file_extension,
@@ -39,6 +40,18 @@ def format_size(bytes_total: int) -> str:
         return f"{bytes_total / (1024 * 1024):.2f} MB"
 
 
+def format_eta(seconds: float | None) -> str:
+    if seconds is None or seconds < 0:
+        return "--:--"
+    total = int(seconds)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def download_item(
     idx: int,
     metadata: dict,
@@ -51,6 +64,7 @@ def download_item(
     overlays_only: bool,
     use_timestamp_filenames: bool,
     remove_duplicates: bool,
+    duplicate_index: DuplicateIndex | None,
     deferred_videos: list,
     deferred_lock: threading.Lock,
     stats: dict,
@@ -98,6 +112,7 @@ def download_item(
             overlays_only,
             use_timestamp_filenames,
             remove_duplicates,
+            duplicate_index,
         )
 
         if stop_event and stop_event.is_set():
@@ -182,6 +197,9 @@ def download_all_memories(
 
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
+    duplicate_index = DuplicateIndex(output_path) if remove_duplicates else None
+    if duplicate_index:
+        duplicate_index.build()
 
     metadata_list = initialize_metadata(memories, output_path)
 
@@ -235,7 +253,13 @@ def download_all_memories(
         speed = total_b / elapsed if elapsed > 0 else 0
         speed_fmt = format_speed(speed)
         size_fmt = format_size(total_b)
-        msg = f"[{completed}/{total_items}] Speed: {speed_fmt} (Total: {size_fmt})"
+        eta_seconds = None
+        if completed > 0:
+            remaining = max(total_items - completed, 0)
+            avg_per_item = elapsed / completed
+            eta_seconds = avg_per_item * remaining
+        eta_fmt = format_eta(eta_seconds)
+        msg = f"[{completed}/{total_items}] Speed: {speed_fmt} ETA: {eta_fmt} (Total: {size_fmt})"
         print(msg)
         if progress_callback:
             progress_callback({
@@ -243,6 +267,7 @@ def download_all_memories(
                 "completed": completed,
                 "total": total_items,
                 "speed": speed_fmt,
+                "eta": eta_fmt,
                 "total_size": size_fmt,
                 "message": msg
             })
@@ -270,12 +295,13 @@ def download_all_memories(
                         defer_video_overlays,
                         overlays_only,
                         use_timestamp_filenames,
-                        remove_duplicates,
-                        deferred_videos,
-                        deferred_lock,
-                        stats,
-                        stats_lock,
-                        progress_callback,
+                    remove_duplicates,
+                    duplicate_index,
+                    deferred_videos,
+                    deferred_lock,
+                    stats,
+                    stats_lock,
+                    progress_callback,
                     )
                 )
 
@@ -316,6 +342,7 @@ def download_all_memories(
                 overlays_only,
                 use_timestamp_filenames,
                 remove_duplicates,
+                duplicate_index,
                 deferred_videos,
                 deferred_lock,
                 stats,
@@ -368,9 +395,13 @@ def download_all_memories(
                             set_file_timestamp(merged_file, timestamp)
 
                         if main_file.exists():
+                            if duplicate_index:
+                                duplicate_index.unregister_file(main_file)
                             main_file.unlink()
                             print(f"  Deleted: {main_file.name}")
                         if overlay_file.exists():
+                            if duplicate_index:
+                                duplicate_index.unregister_file(overlay_file)
                             overlay_file.unlink()
                             print(f"  Deleted: {overlay_file.name}")
 

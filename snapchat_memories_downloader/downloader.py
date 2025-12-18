@@ -5,7 +5,7 @@ import zipfile
 from pathlib import Path
 
 from . import deps
-from .duplicates import is_duplicate_file
+from .duplicates import DuplicateIndex, check_duplicate
 from .exif_utils import add_exif_metadata
 from .files import generate_filename, parse_date_to_timestamp, set_file_timestamp
 from .magic_bytes import detect_file_kind, extension_for_kind
@@ -29,6 +29,7 @@ def download_and_extract(
     overlays_only: bool = False,
     use_timestamp_filenames: bool = False,
     check_duplicates: bool = False,
+    duplicate_index: DuplicateIndex | None = None,
 ) -> list:
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
@@ -89,8 +90,8 @@ def download_and_extract(
                             merged_data, date_str, latitude, longitude
                         )
 
-                        is_dup, dup_file = is_duplicate_file(
-                            merged_data, base_path, check_duplicates
+                        is_dup, dup_file, data_hash = check_duplicate(
+                            merged_data, base_path, check_duplicates, duplicate_index
                         )
                         if is_dup and dup_file:
                             print(f"    Skipped: Duplicate of existing file '{dup_file}'")
@@ -110,6 +111,12 @@ def download_and_extract(
                             output_path = base_path / output_filename
                             with open(output_path, "wb") as f:
                                 f.write(merged_data)
+                            if duplicate_index:
+                                duplicate_index.register_file(
+                                    output_path,
+                                    data_hash=data_hash,
+                                    size=len(merged_data),
+                                )
                             files_saved.append(
                                 {
                                     "path": output_filename,
@@ -164,12 +171,16 @@ def download_and_extract(
                             for potential_main in base_path.glob(
                                 f"{base_name_no_ext}-main.*"
                             ):
+                                if duplicate_index:
+                                    duplicate_index.unregister_file(potential_main)
                                 potential_main.unlink()
                                 print(f"    Deleted separate file: {potential_main.name}")
 
                             for potential_overlay in base_path.glob(
                                 f"{base_name_no_ext}-overlay.*"
                             ):
+                                if duplicate_index:
+                                    duplicate_index.unregister_file(potential_overlay)
                                 potential_overlay.unlink()
                                 print(f"    Deleted separate file: {potential_overlay.name}")
 
@@ -216,8 +227,8 @@ def download_and_extract(
                             file_data, date_str, latitude, longitude
                         )
 
-                    is_dup, dup_file = is_duplicate_file(
-                        file_data, base_path, check_duplicates
+                    is_dup, dup_file, data_hash = check_duplicate(
+                        file_data, base_path, check_duplicates, duplicate_index
                     )
                     if is_dup and dup_file:
                         print(f"    Skipped: Duplicate of existing file '{dup_file}'")
@@ -242,6 +253,12 @@ def download_and_extract(
                         output_path = base_path / output_filename
                         with open(output_path, "wb") as f:
                             f.write(file_data)
+                        if duplicate_index:
+                            duplicate_index.register_file(
+                                output_path,
+                                data_hash=data_hash,
+                                size=len(file_data),
+                            )
 
                         timestamp = parse_date_to_timestamp(date_str)
                         set_file_timestamp(output_path, timestamp)
@@ -282,7 +299,9 @@ def download_and_extract(
         if is_image:
             content = add_exif_metadata(content, date_str, latitude, longitude)
 
-        is_dup, dup_file = is_duplicate_file(content, base_path, check_duplicates)
+        is_dup, dup_file, data_hash = check_duplicate(
+            content, base_path, check_duplicates, duplicate_index
+        )
         if is_dup and dup_file:
             print(f"    Skipped: Duplicate of existing file '{dup_file}'")
             files_saved.append(
@@ -300,6 +319,12 @@ def download_and_extract(
             output_path = base_path / output_filename
             with open(output_path, "wb") as f:
                 f.write(content)
+            if duplicate_index:
+                duplicate_index.register_file(
+                    output_path,
+                    data_hash=data_hash,
+                    size=len(content),
+                )
             files_saved.append({"path": output_filename, "size": len(content), "type": "single"})
 
     return files_saved
