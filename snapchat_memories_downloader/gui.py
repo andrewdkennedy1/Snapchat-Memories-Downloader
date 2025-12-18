@@ -39,7 +39,6 @@ class SnapchatGui:
         )
         self._sync_option_states()
         self._start_ffmpeg_preflight()
-        self._start_default_html_count_if_present()
 
     def _setup_page(self) -> None:
         self.page.title = "Snapchat Memories Downloader"
@@ -103,17 +102,6 @@ class SnapchatGui:
         self.file_picker = ft.FilePicker(on_result=self._on_file_result)
         self.dir_picker = ft.FilePicker(on_result=self._on_dir_result)
         self.page.overlay.extend([self.file_picker, self.dir_picker])
-
-    def _start_default_html_count_if_present(self) -> None:
-        html_value = (self.html_input.value or "").strip()
-        if not html_value:
-            return
-        path = Path(html_value).expanduser()
-        if not path.exists():
-            return
-        self.html_summary_text.value = "Parsing HTML..."
-        self._safe_update()
-        threading.Thread(target=self._update_html_count, args=(str(path),), daemon=True).start()
 
     def _start_ffmpeg_preflight(self) -> None:
         threading.Thread(target=self._run_ffmpeg_preflight, daemon=True).start()

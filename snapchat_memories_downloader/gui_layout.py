@@ -2,31 +2,20 @@ from __future__ import annotations
 
 import flet as ft
 
-from snapchat_memories_downloader.default_paths import (
-    default_output_dir,
-    find_memories_history_html,
-    suggest_output_dir_for_html,
-)
 from snapchat_memories_downloader.gui_theme import SC_BLACK, SC_YELLOW, icon
 
 
 def build_setup_section(gui) -> ft.Control:
-    default_html = find_memories_history_html()
-    default_html_text = str(default_html) if default_html else ""
-    default_output = (
-        suggest_output_dir_for_html(default_html) if default_html else default_output_dir()
-    )
-
     gui.html_input = ft.TextField(
         label="Snapchat HTML File (memories_history.html)",
-        value=default_html_text,
+        value="",
         expand=True,
         border_color=SC_YELLOW,
         hint_text="Select memories_history.html",
     )
     gui.output_input = ft.TextField(
         label="Output Directory",
-        value=str(default_output),
+        value="memories",
         expand=True,
         border_color=SC_YELLOW,
         hint_text="Choose where to save files",

@@ -84,12 +84,11 @@ def main():
         return argparse.SUPPRESS if _HAS_GOOEY else help_text
 
     setup_group = parser.add_argument_group("Setup")
-    default_html = find_memories_history_html()
     add_arg(
         setup_group,
         "html_file",
         nargs="?",
-        default=str(default_html) if default_html else "",
+        default="",
         widget="FileChooser",
     )
     add_arg(setup_group, "-o", "--output", type=str, default="memories", widget="DirChooser")
