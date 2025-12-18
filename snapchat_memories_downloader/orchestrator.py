@@ -18,6 +18,7 @@ from .metadata_store import initialize_metadata, metadata_lock, save_metadata
 from .multisnap import join_multi_snaps
 from .overlay import merge_video_overlay
 from .parser import parse_html_file
+from .report import generate_report, save_report, print_report_summary, show_report_popup
 
 
 def format_speed(bytes_per_sec: float) -> str:
@@ -168,7 +169,10 @@ def download_all_memories(
     limit: int | None = None,
     stop_event: threading.Event | None = None,
     progress_callback: callable = None,
+    show_report: bool = True,
 ) -> None:
+    start_time = time.time()
+    
     memories = parse_html_file(html_path)
     if limit is not None and limit >= 0:
         memories = memories[:limit]
@@ -398,17 +402,23 @@ def download_all_memories(
     if join_multi_snaps_enabled:
         join_multi_snaps(output_path)
 
-    successful = sum(1 for m in metadata_list if m.get("status") == "success")
-    failed = sum(1 for m in metadata_list if m.get("status") == "failed")
-    pending = sum(1 for m in metadata_list if m.get("status") == "pending")
-    total_files = sum(
-        len(m.get("files", [])) for m in metadata_list if m.get("status") == "success"
-    )
-    print(f"\nSummary: {successful} successful, {failed} failed, {pending} pending, {total_files} total files")
-
-    if failed > 0:
+    end_time = time.time()
+    
+    # Generate comprehensive report
+    report = generate_report(metadata_list, output_path, start_time, end_time)
+    report_file = save_report(report, output_path)
+    
+    # Show report summary in console
+    print_report_summary(report)
+    
+    # Show GUI popup if requested and not stopped
+    if show_report and not (stop_event and stop_event.is_set()):
+        show_report_popup(report, report_file)
+    
+    # Legacy command suggestions
+    if report["totals"]["failed"] > 0:
         print("\nTo retry failed downloads, run:")
         print("  python app.py --retry-failed")
-    if pending > 0:
+    if report["totals"]["pending"] > 0:
         print("\nTo resume incomplete downloads, run:")
         print("  python app.py --resume")

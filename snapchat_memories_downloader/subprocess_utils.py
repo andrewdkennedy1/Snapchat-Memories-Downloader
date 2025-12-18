@@ -10,8 +10,54 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 from collections.abc import Sequence
 from typing import Any
+
+
+_tracked_pids: set[int] = set()
+_tracked_pids_lock = threading.Lock()
+
+
+def track_pid(pid: int) -> None:
+    with _tracked_pids_lock:
+        _tracked_pids.add(pid)
+
+
+def untrack_pid(pid: int) -> None:
+    with _tracked_pids_lock:
+        _tracked_pids.discard(pid)
+
+
+def terminate_tracked_children() -> None:
+    """
+    Best-effort termination of tracked child processes.
+
+    This is a fallback for cases where Windows Job Objects cannot be enabled.
+    """
+
+    if os.name != "nt":
+        return
+
+    with _tracked_pids_lock:
+        pids = sorted(_tracked_pids)
+
+    if not pids:
+        return
+
+    for pid in pids:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+                **_no_window_kwargs(),
+            )
+        except Exception:
+            pass
 
 
 def _has_console_window() -> bool:
@@ -48,12 +94,23 @@ def _no_window_kwargs() -> dict[str, Any]:
 
 
 def run_capture(cmd: Sequence[str], *, timeout: int) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
+    proc = subprocess.Popen(
         list(cmd),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        timeout=timeout,
-        check=False,
         **_no_window_kwargs(),
     )
+    track_pid(proc.pid)
+    try:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return subprocess.CompletedProcess(list(cmd), proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            raise exc
+    finally:
+        untrack_pid(proc.pid)

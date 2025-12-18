@@ -4,7 +4,7 @@ import io
 import subprocess
 from pathlib import Path
 
-from .deps import Image, ffmpeg_available
+from .deps import Image, ffmpeg_available, ffmpeg_path
 from .subprocess_utils import run_capture
 
 
@@ -62,7 +62,7 @@ def build_ffmpeg_overlay_command(
 ) -> list[str]:
     overlay_is_image = overlay_path.suffix.lower() in _IMAGE_EXTS
 
-    cmd = ["ffmpeg", "-hide_banner"]
+    cmd = [ffmpeg_path or "ffmpeg", "-hide_banner"]
     cmd += ["-y", "-i", str(main_path)]
     if overlay_is_image:
         cmd += ["-loop", "1", "-i", str(overlay_path)]

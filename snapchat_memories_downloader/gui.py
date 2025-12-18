@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import queue
 import threading
 import time
@@ -10,6 +9,7 @@ import flet as ft
 
 from snapchat_memories_downloader.orchestrator import download_all_memories
 from snapchat_memories_downloader.parser import parse_html_file
+from snapchat_memories_downloader.process_lifecycle import enable_kill_children_on_exit, shutdown_now
 
 # Snapchat-ish colors (dark UI)
 SC_YELLOW = "#FFFC00"
@@ -25,6 +25,7 @@ def _icon(name: str, fallback_name: str = "CIRCLE") -> ft.IconData:
 
 class SnapchatGui:
     def __init__(self, page: ft.Page):
+        enable_kill_children_on_exit()
         self.page = page
         self.stop_event = threading.Event()
         self._log_queue: queue.Queue[str] = queue.Queue(maxsize=5000)
@@ -52,17 +53,23 @@ class SnapchatGui:
             )
         )
         self.page.on_window_event = self._handle_window_event
+        if hasattr(self.page, "on_disconnect"):
+            self.page.on_disconnect = lambda _: self._force_shutdown()
 
     def _handle_window_event(self, e) -> None:
+        data = str(getattr(e, "data", "") or "").lower()
+        if "close" in data:
+            self._force_shutdown()
+            return
+        # Ignore non-close window events (resize, focus, etc.).
+
+    def _force_shutdown(self) -> None:
         try:
             self.stop_event.set()
             self._pump_stop.set()
         except Exception:
             pass
-
-        data = str(getattr(e, "data", "") or "").lower()
-        if data == "close":
-            os._exit(0)
+        shutdown_now(0)
 
     def _build_ui(self) -> None:
         header = self._build_header()
@@ -489,6 +496,7 @@ class SnapchatGui:
             "limit": 3 if is_test else None,
             "stop_event": self.stop_event,
             "progress_callback": self._progress_callback,
+            "show_report": True,
         }
 
         threading.Thread(target=self._run_downloader, args=(params,), daemon=True).start()

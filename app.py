@@ -30,7 +30,7 @@ try:
 except ImportError:
     _HAS_FLET = False
 
-from snapchat_memories_downloader.deps import requests
+from snapchat_memories_downloader.deps import requests, ensure_ffmpeg
 from snapchat_memories_downloader.downloader import download_and_extract
 from snapchat_memories_downloader.files import (
     get_file_extension,
@@ -56,9 +56,14 @@ def _build_gooey_decorator():
 
 @_build_gooey_decorator()
 def main():
+    # Preflight check for FFmpeg (Windows only, auto-downloads if missing)
+    ensure_ffmpeg()
+
     # If Flet is installed and no args provided, launch Flet GUI
     if _HAS_FLET and len(sys.argv) == 1:
+        from snapchat_memories_downloader.process_lifecycle import enable_kill_children_on_exit
         from snapchat_memories_downloader.gui import main as flet_main
+        enable_kill_children_on_exit()
         ft.app(target=flet_main)
         return
 
@@ -104,6 +109,7 @@ def main():
 
     tools_group = parser.add_argument_group("Tools")
     add_arg(tools_group, "--merge-existing", type=str, widget="DirChooser")
+    add_arg(tools_group, "--no-report", action="store_true", help="Disable popup report window")
 
     args = parser.parse_args()
 
@@ -183,6 +189,7 @@ def main():
         join_multi_snaps_enabled=args.join_multi_snaps,
         concurrent=args.concurrent,
         jobs=args.jobs,
+        show_report=not args.no_report,
     )
 
 

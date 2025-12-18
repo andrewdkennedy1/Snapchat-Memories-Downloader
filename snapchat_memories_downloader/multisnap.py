@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .deps import ffmpeg_available
+from .deps import ffmpeg_available, ffmpeg_path
 from .subprocess_utils import run_capture
 
 
@@ -65,7 +65,7 @@ def join_multi_snaps(folder_path: Path, time_threshold_seconds: int = 10) -> dic
                     f.write(f"file '{escaped_path}'\n")
 
             cmd = [
-                "ffmpeg",
+                ffmpeg_path or "ffmpeg",
                 "-f",
                 "concat",
                 "-safe",
