@@ -112,7 +112,13 @@ class SnapchatGui:
 
         ui_log("FFmpeg: checking...")
         ok = ensure_ffmpeg(interactive=False, log=ui_log)
-        ui_log("FFmpeg: ready" if ok else "FFmpeg: not available (video merges/join disabled)")
+        if ok:
+            from snapchat_memories_downloader.deps import get_best_h264_encoder
+            encoder = get_best_h264_encoder()
+            gpu_tag = f" (GPU: {encoder.replace('h264_', '').upper()})" if "libx264" not in encoder else " (CPU fallback)"
+            ui_log(f"FFmpeg: ready{gpu_tag}")
+        else:
+            ui_log("FFmpeg: not available (video merges/join disabled)")
 
     def _build_header(self) -> ft.Control:
         app_icon = icon("PHOTO_CAMERA", "CAMERA_ALT") or icon("CAMERA", "IMAGE") or icon("IMAGE", "CIRCLE")

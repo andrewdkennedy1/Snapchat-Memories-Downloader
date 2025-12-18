@@ -180,3 +180,48 @@ def ensure_ffmpeg(interactive: bool = True, log: Callable[[str], None] | None = 
     except Exception as e:
         emit(f"Failed to download FFmpeg: {e}")
         return False
+
+
+def get_available_encoders() -> list[str]:
+    """Probe FFmpeg for available video encoders."""
+    if not ffmpeg_available:
+        return []
+    
+    try:
+        # Run ffmpeg -encoders and look for h264 related ones
+        result = run_capture([ffmpeg_path or "ffmpeg", "-encoders"], timeout=5)
+        if result.returncode != 0:
+            return []
+        
+        output = result.stdout.decode("utf-8", errors="ignore")
+        encoders = []
+        for line in output.splitlines():
+            if "h264" in line.lower():
+                parts = line.split()
+                if len(parts) >= 2:
+                    # Encoders are usually the 2nd word in -encoders output
+                    # e.g. " V..... libx264             libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"
+                    encoder_name = parts[1]
+                    encoders.append(encoder_name)
+        return encoders
+    except Exception:
+        return []
+
+
+def get_best_h264_encoder() -> str:
+    """Find the best H.264 encoder available, favoring GPU ones."""
+    available = get_available_encoders()
+    
+    # Priority list for H.264 encoders
+    priority = [
+        "h264_nvenc",  # NVIDIA
+        "h264_amf",    # AMD
+        "h264_qsv",    # Intel
+        "libx264",     # Software (Fallback)
+    ]
+    
+    for enc in priority:
+        if enc in available:
+            return enc
+            
+    return "libx264"

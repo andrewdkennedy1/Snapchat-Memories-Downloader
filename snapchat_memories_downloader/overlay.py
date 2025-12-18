@@ -76,6 +76,8 @@ def build_ffmpeg_overlay_command(
         "[base_s][ovr_s]overlay=eof_action=pass:format=auto[outv]"
     )
 
+    encoder = deps.get_best_h264_encoder()
+    
     cmd += [
         "-filter_complex",
         filter_complex,
@@ -84,11 +86,21 @@ def build_ffmpeg_overlay_command(
         "-map",
         "0:a?",
         "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        "23",
+        encoder,
+    ]
+
+    # Encoder specific settings
+    if "nvenc" in encoder:
+        cmd += ["-rc", "vbr", "-cq", "23", "-preset", "p4"]
+    elif "amf" in encoder:
+        cmd += ["-rc", "vbaq", "-quality", "balanced"]
+    elif "qsv" in encoder:
+        cmd += ["-global_quality", "23", "-preset", "balanced"]
+    else:
+        # Default libx264 settings
+        cmd += ["-preset", "medium", "-crf", "23"]
+
+    cmd += [
         "-pix_fmt",
         "yuv420p",
         "-movflags",
