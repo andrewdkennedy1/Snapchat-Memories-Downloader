@@ -29,13 +29,14 @@ if not defined PYTHON (
   exit /b 1
 )
 
+echo Installing dependencies...
+%PYTHON% -m pip install -r requirements.txt
+
+echo Building executable...
 %PYTHON% -m PyInstaller ^
   --noconfirm ^
   --clean ^
-  --onefile ^
-  --windowed ^
-  --name "SnapchatMemoriesDownloader" ^
-  "app.py"
+  "SnapchatMemoriesDownloader.spec"
 
 set "EXITCODE=%ERRORLEVEL%"
 popd
