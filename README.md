@@ -56,7 +56,7 @@ but are now separate options at the bottom of the list.
 
 - Downloads all memories from `memories_history.html`
 - Sequential naming: `01.jpg`, `02.mp4`, `03.jpg`, etc.
-- **Timestamp-based filenames** (Python) - Name files as `YYYY.MM.DD-HH:MM:SS.ext` for easy sorting by date
+- **Timestamp-based filenames** (Python) - Name files as `YYYY.MM.DD-HH.MM.SS.ext` (Windows-safe) for easy sorting by date
 - **Preserves ALL metadata**: dates, GPS coordinates, media type
 - **Embeds EXIF metadata into images** - GPS coordinates and dates show up in Photos apps
 - **Sets file timestamps to match original capture date**
@@ -114,10 +114,12 @@ If your download gets interrupted or has failures:
 source venv/bin/activate
 
 # 2. Download your memories
-python download_memories.py
+python app.py
 
 # 3. Done! Files saved to ./memories/
 ```
+
+Note: Older instructions may reference `download_memories.py`; it still works as a compatibility shim.
 
 ### Setup
 
@@ -152,33 +154,33 @@ source venv/bin/activate
 **Test mode** (download first 3 files only):
 
 ```bash
-python download_memories.py --test
+python app.py --test
 ```
 
 **Full download**:
 
 ```bash
-python download_memories.py
+python app.py
 ```
 
 **Custom HTML file path**:
 
 ```bash
 # Direct file path
-python download_memories.py /path/to/memories_history.html
+python app.py /path/to/memories_history.html
 
 # Or folder containing the HTML
-python download_memories.py /path/to/html/folder
+python app.py /path/to/html/folder
 ```
 
 **Resume/Retry**:
 
 ```bash
 # Resume interrupted download
-python download_memories.py --resume
+python app.py --resume
 
 # Retry only failed downloads
-python download_memories.py --retry-failed
+python app.py --retry-failed
 ```
 
 ### Advanced Features
@@ -188,7 +190,7 @@ python download_memories.py --retry-failed
 Combine overlay files with main content:
 
 ```bash
-python download_memories.py --merge-overlays
+python app.py --merge-overlays
 ```
 
 - **Images:** Fast, instant processing
@@ -198,16 +200,16 @@ python download_memories.py --merge-overlays
 
 ```bash
 # Videos only
-python download_memories.py --videos-only --merge-overlays
+python app.py --videos-only --merge-overlays
 
 # Pictures only
-python download_memories.py --pictures-only --merge-overlays
+python app.py --pictures-only --merge-overlays
 ```
 
 **Merge already-downloaded files:**
 
 ```bash
-python download_memories.py --merge-existing ./memories
+python app.py --merge-existing ./memories
 ```
 
 Creates merged versions without deleting originals.
@@ -215,7 +217,7 @@ Creates merged versions without deleting originals.
 #### Custom Output Directory
 
 ```bash
-python download_memories.py -o /path/to/output
+python app.py -o /path/to/output
 ```
 
 Saves files to a custom location instead of `./memories/`
@@ -223,10 +225,10 @@ Saves files to a custom location instead of `./memories/`
 #### Timestamp-Based Filenames
 
 ```bash
-python download_memories.py --timestamp-filenames
+python app.py --timestamp-filenames
 ```
 
-Names files as `2024.11.30-14:30:45.jpg` instead of `01.jpg`
+Names files as `2024.11.30-14.30.45.jpg` instead of `01.jpg`
 
 - ✅ Files sort by date in file managers
 - ✅ Easy to identify when memories were taken
@@ -234,7 +236,7 @@ Names files as `2024.11.30-14:30:45.jpg` instead of `01.jpg`
 #### Remove Duplicate Files
 
 ```bash
-python download_memories.py --remove-duplicates
+python app.py --remove-duplicates
 ```
 
 Checks MD5 hash before saving each file and skips duplicates.
@@ -246,7 +248,7 @@ Checks MD5 hash before saving each file and skips duplicates.
 #### Join Multi-Snap Videos
 
 ```bash
-python download_memories.py --join-multi-snaps
+python app.py --join-multi-snaps
 ```
 
 Detects videos taken within 10 seconds and concatenates them.
@@ -259,7 +261,7 @@ Detects videos taken within 10 seconds and concatenates them.
 
 ```bash
 # All the features!
-python download_memories.py \
+python app.py \
   -o ~/Desktop/memories \
   --timestamp-filenames \
   --remove-duplicates \
@@ -267,14 +269,14 @@ python download_memories.py \
   --join-multi-snaps
 
 # Resume with duplicate detection
-python download_memories.py --resume --remove-duplicates
+python app.py --resume --remove-duplicates
 ```
 
 ### Getting Help
 
 ```bash
 # View all options
-python download_memories.py --help
+python app.py --help
 
 # When done, deactivate virtual environment
 deactivate
@@ -286,8 +288,8 @@ deactivate
 
 - All memories are saved to the `memories/` directory (or custom directory specified with `--output`)
 - **Sequential naming (default)**: `01.jpg`, `02.mp4`, `03.jpg`, etc.
-- **Timestamp naming (with `--timestamp-filenames`)**: `2024.11.30-14:30:45.jpg`, `2024.12.15-09:22:13.mp4`, etc.
-- Files with overlays are extracted as `XX-main.ext` and `XX-overlay.ext` (or `YYYY.MM.DD-HH:MM:SS-main.ext` with timestamp naming)
+- **Timestamp naming (with `--timestamp-filenames`)**: `2024.11.30-14.30.45.jpg`, `2024.12.15-09.22.13.mp4`, etc.
+- Files with overlays are extracted as `XX-main.ext` and `XX-overlay.ext` (or `YYYY.MM.DD-HH.MM.SS-main.ext` with timestamp naming)
 
 ### Metadata
 
@@ -376,11 +378,12 @@ For merged overlays (when using `--merge-overlays` flag):
 │   └── memories_history.html    # Snapchat export HTML file (not included)
 ├── memories/                     # Downloaded files (default output directory, created by script)
 │   ├── 01.mp4                    # Sequential naming (default)
-│   ├── 02.jpg                    # or 2024.11.30-14:30:45.jpg (with --timestamp-filenames)
+│   ├── 02.jpg                    # or 2024.11.30-14.30.45.jpg (with --timestamp-filenames)
 │   ├── 03.jpg
 │   └── metadata.json
 ├── venv/                        # Python virtual environment
-├── download_memories.py         # Main Python script
+├── app.py                       # Python GUI/CLI entrypoint
+├── download_memories.py         # Compatibility shim
 ├── requirements.txt             # Python dependencies
 ├── setup.sh                     # Setup script
 ├── .gitignore                   # Git ignore file

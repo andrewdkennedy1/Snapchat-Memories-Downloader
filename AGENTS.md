@@ -1,13 +1,13 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to LLM Programming agents when working with code in this repository.
 
 ## Project Overview
 
 Dual-implementation Snapchat Memories downloader with web and Python versions that parse `memories_history.html` exports to download media with metadata preservation.
 
 **Web Version**: `docs/index.html` (2743 lines) - Client-side processing with FFmpeg.wasm for video overlays
-**Python Version**: `download_memories.py` (1608 lines) - CLI tool with FFmpeg subprocess for video overlays
+**Python Version**: `app.py` - GUI/CLI entrypoint (implementation is in `snapchat_memories_downloader/`)
 
 Both versions share identical architecture but differ in implementation details and feature sets.
 
@@ -17,32 +17,32 @@ Both versions share identical architecture but differ in implementation details 
 ```bash
 ./setup.sh                    # Create venv, install dependencies
 source venv/bin/activate      # Activate environment
-python3 download_memories.py --test  # Quick test (first 3 files)
+python3 app.py --test  # Quick test (first 3 files)
 deactivate                    # Exit venv
 ```
 
 ### Common Python Usage
 ```bash
 # Basic download
-python3 download_memories.py
+python3 app.py
 
 # Resume interrupted download
-python3 download_memories.py --resume
+python3 app.py --resume
 
 # Retry only failed items
-python3 download_memories.py --retry-failed
+python3 app.py --retry-failed
 
 # Merge overlays (requires FFmpeg for videos)
-python3 download_memories.py --merge-overlays
+python3 app.py --merge-overlays
 
 # Timestamp-based naming instead of sequential
-python3 download_memories.py --timestamp-filenames
+python3 app.py --timestamp-filenames
 
 # Process only videos with overlay merging
-python3 download_memories.py --videos-only --merge-overlays
+python3 app.py --videos-only --merge-overlays
 
 # Custom output directory
-python3 download_memories.py -o ./my-memories
+python3 app.py -o ./my-memories
 ```
 
 ### Web Development
@@ -144,7 +144,8 @@ Detects videos within 10-second time windows (indicates multi-snap stories):
 
 ```
 .
-├── download_memories.py      # Python CLI (1608 lines)
+├── app.py                   # Python GUI/CLI entrypoint
+├── download_memories.py      # Compatibility shim
 ├── docs/
 │   ├── index.html            # Web version (2743 lines, single file)
 │   ├── ffmpeg/               # FFmpeg.wasm artifacts (auto-synced)
@@ -205,7 +206,7 @@ Enables sorting by capture date in file explorers.
 
 **Python Quick Test**:
 ```bash
-python3 download_memories.py --test  # Downloads first 3 files only
+python3 app.py --test  # Downloads first 3 files only
 ```
 
 **Validation Features**:
