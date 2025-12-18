@@ -31,7 +31,8 @@ except ImportError:
     _HAS_FLET = False
 
 from snapchat_memories_downloader.deps import requests, ensure_ffmpeg
-from snapchat_memories_downloader.default_paths import find_memories_history_html
+from snapchat_memories_downloader.default_paths import suggest_output_dir_for_html
+from snapchat_memories_downloader.tk_dialogs import pick_html_file, show_error
 from snapchat_memories_downloader.downloader import download_and_extract
 from snapchat_memories_downloader.files import (
     get_file_extension,
@@ -64,9 +65,6 @@ def main():
         enable_kill_children_on_exit()
         ft.app(target=flet_main)
         return
-
-    # Preflight check for FFmpeg (Windows only, auto-downloads if missing)
-    ensure_ffmpeg()
 
     parser: argparse.ArgumentParser
     if _HAS_GOOEY:
@@ -121,24 +119,39 @@ def main():
     args = parser.parse_args()
 
     if args.merge_existing:
+        ensure_ffmpeg()
         merge_existing_files(args.merge_existing)
         sys.exit(0)
 
-    if not args.html_file:
-        guessed = find_memories_history_html()
-        if guessed:
-            args.html_file = str(guessed)
+    if not args.html_file and getattr(sys, "frozen", False):
+        selected = pick_html_file()
+        if selected:
+            args.html_file = str(selected)
+            if getattr(args, "output", None) == "memories":
+                try:
+                    args.output = str(suggest_output_dir_for_html(selected))
+                except Exception:
+                    pass
 
     if not args.html_file:
-        print("Error: Please provide the path to memories_history.html")
-        print("Tip: You can drag/drop the file onto the executable, or run with:")
-        print("  SnapchatMemoriesDownloader.exe <path-to-memories_history.html>")
+        msg = (
+            "Please provide the path to memories_history.html.\n\n"
+            "Tip: You can drag/drop the file onto the executable, or run with:\n"
+            "  SnapchatMemoriesDownloader.exe <path-to-memories_history.html>"
+        )
+        if getattr(sys, "frozen", False):
+            show_error("Missing HTML file", msg)
+        else:
+            print(f"Error: {msg}")
         sys.exit(1)
 
     html_path = Path(args.html_file)
     if html_path.is_dir():
         html_path = html_path / "memories_history.html"
     args.html_file = str(html_path)
+
+    # Preflight check for FFmpeg (Windows only, auto-downloads if missing)
+    ensure_ffmpeg()
 
     # Core logic
     mode = args.mode
